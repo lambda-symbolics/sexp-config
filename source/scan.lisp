@@ -5,11 +5,21 @@
 (defun scan--delimiter-p (character)
   "Return true when CHARACTER ends a token.
 
-Every character the scan refuses outright also ends a token, so a rejected
-character can never be read as part of a neighbouring keyword."
+This is deliberately the standard set and not every character the scan refuses.
+A refused character stays inside the token it appears in, so the token check can
+report it as escaped or package-qualified syntax rather than as an unknown
+keyword."
   (not (null (find character
-                   '(#\( #\) #\; #\Space #\Tab #\Newline #\Return #\Page
-                     #\" #\# #\' #\` #\, #\\ #\|)))))
+                   '(#\( #\) #\; #\Space #\Tab #\Newline #\Return #\Page)))))
+
+(defun scan--boundary-p (character)
+  "Return true when CHARACTER may precede a keyword token.
+
+A keyword may follow a delimiter, a closing quote, or a closed block comment, so
+this set is wider than SCAN--DELIMITER-P. Anything else before a colon means the
+colon is qualifying a name."
+  (not (null (or (scan--delimiter-p character)
+                 (find character '(#\" #\# #\' #\` #\, #\\ #\|))))))
 
 (defun scan--accepted-keyword-p (token grammar)
   "Return true when TOKEN names a keyword GRAMMAR accepts.
@@ -34,7 +44,10 @@ without it."
   (let* ((end (or (position-if #'scan--delimiter-p source :start (1+ start))
                   (length source)))
          (token (subseq source start end)))
-    (when (find #\: token :start 1)
+    (when (find-if (lambda (character)
+                     (find character '(#\: #\\ #\| #\#)))
+                   token
+                   :start 1)
       (grammar--fail-token
        grammar :invalid-syntax source start token
        "~A does not permit escaped or package-qualified symbols."
@@ -108,7 +121,7 @@ found."
                                     label character))
                  ((char= character #\:)
                   (when (and (plusp index)
-                             (not (scan--delimiter-p (char source (1- index)))))
+                             (not (scan--boundary-p (char source (1- index)))))
                     (grammar--fail-at
                      grammar :invalid-syntax source index
                      "~A does not permit package-qualified symbols."
