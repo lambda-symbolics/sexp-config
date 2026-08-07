@@ -48,7 +48,7 @@ the result has to terminate.
 |--------+---------|
 | =:label= | Noun phrase opening every diagnostic, such as ="SKILL.sexp"= |
 | =:keywords= | Accepted keyword vocabulary; =nil= accepts any keyword |
-| =:maximum-depth= | Maximum structural nesting |
+| =:maximum-depth= | Maximum structural nesting; 0 refuses any nesting |
 | =:maximum-nodes= | Maximum count of conses and atoms |
 | =:allowed-atom-predicate= | Predicate every atom must satisfy; =nil= accepts any |
 | =:improper-lists-permitted-p= | Accept dotted lists rather than refuse them |

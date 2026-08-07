@@ -137,9 +137,14 @@
                    :invalid-grammar)
                "a non-string label is refused")
   (test-assert (eq (rejection-kind
-                    (lambda () (make-source-grammar :maximum-depth 0)))
+                    (lambda () (make-source-grammar :maximum-depth -1)))
                    :invalid-grammar)
-               "a non-positive bound is refused")
+               "a negative bound is refused")
+  (test-assert (eq (rejection-kind
+                    (lambda () (scan-source "(:config)"
+                                            (tests--grammar :maximum-depth 0))))
+                   :data-too-deep)
+               "a zero depth bound refuses every parenthesized source")
   (test-assert (eq (rejection-kind
                     (lambda () (make-source-grammar :keywords '("name"))))
                    :invalid-grammar)

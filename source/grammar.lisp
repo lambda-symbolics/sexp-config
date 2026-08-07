@@ -16,12 +16,12 @@
    (maximum-depth
     :initarg :maximum-depth
     :reader source-grammar-maximum-depth
-    :type (integer 1)
-    :documentation "The maximum accepted structural depth.")
+    :type (integer 0)
+    :documentation "The maximum accepted structural depth; 0 accepts no nesting.")
    (maximum-nodes
     :initarg :maximum-nodes
     :reader source-grammar-maximum-nodes
-    :type (integer 1)
+    :type (integer 0)
     :documentation "The maximum accepted count of conses and atoms.")
    (allowed-atom-predicate
     :initarg :allowed-atom-predicate
@@ -59,7 +59,8 @@
 
 LABEL opens every diagnostic, so give it a noun phrase such as \"SKILL.sexp\".
 KEYWORDS whitelists the keyword tokens the source may name; NIL accepts any
-keyword. MAXIMUM-DEPTH and MAXIMUM-NODES bound the structure.
+keyword. MAXIMUM-DEPTH and MAXIMUM-NODES bound the structure, and either may be
+zero to refuse every nested or non-empty source.
 
 ALLOWED-ATOM-PREDICATE restricts which atoms may appear, which is how a caller
 excludes symbols it never wants to interpret. IMPROPER-LISTS-PERMITTED-P accepts
@@ -75,12 +76,12 @@ rather than as the standard objects they name."
            :kind :invalid-grammar
            :label "the source grammar"
            :message "A source grammar label must be a string."))
-  (unless (and (typep maximum-depth '(integer 1))
-               (typep maximum-nodes '(integer 1)))
+  (unless (and (typep maximum-depth '(integer 0))
+               (typep maximum-nodes '(integer 0)))
     (error 'sexp-config-error
            :kind :invalid-grammar
            :label label
-           :message "Source grammar bounds must be positive integers."))
+           :message "Source grammar bounds must be non-negative integers."))
   (unless (every #'symbolp keywords)
     (error 'sexp-config-error
            :kind :invalid-grammar
