@@ -15,6 +15,7 @@
            #:source-grammar-block-comments-permitted-p
            #:source-grammar-common-lisp-symbols-permitted-p
            #:source-grammar-improper-lists-permitted-p
+           #:source-grammar-keyword-predicate
            #:source-grammar-keywords
            #:source-grammar-label
            #:source-grammar-list-tails-increase-depth-p

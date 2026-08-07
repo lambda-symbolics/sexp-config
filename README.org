@@ -50,7 +50,8 @@ the result has to terminate.
 | Option | Meaning |
 |--------+---------|
 | =:label= | Noun phrase opening every diagnostic, such as ="SKILL.sexp"= |
-| =:keywords= | Accepted keyword vocabulary; =nil= accepts any keyword |
+| =:keywords= | Accepted keyword vocabulary |
+| =:keyword-predicate= | Accepts a keyword by name, for a computed vocabulary |
 | =:maximum-depth= | Maximum structural nesting; 0 refuses any nesting |
 | =:maximum-nodes= | Maximum count of conses and atoms |
 | =:maximum-string-characters= | Maximum length of one string; =nil= unbounded |
@@ -70,6 +71,8 @@ is refused, because reader labels need it. Set =:common-lisp-symbols-permitted-p
 grammar has no place for a bare symbol: with it false, the tokens =nil= and =t=
 read as fresh uninterned symbols rather than the standard objects they name, so
 a grammar that expects a real =nil= must leave it true.
+
+Leaving both =:keywords= and =:keyword-predicate= unset accepts any keyword.
 
 * Diagnostics
 

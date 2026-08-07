@@ -12,16 +12,22 @@ character can never be read as part of a neighbouring keyword."
                      #\" #\# #\' #\` #\, #\\ #\|)))))
 
 (defun scan--accepted-keyword-p (token grammar)
-  "Return true when TOKEN names a keyword GRAMMAR accepts."
-  (let ((keywords (source-grammar-keywords grammar)))
+  "Return true when TOKEN names a keyword GRAMMAR accepts.
+
+TOKEN still carries its leading colon; a grammar predicate receives the name
+without it."
+  (let ((keywords (source-grammar-keywords grammar))
+        (predicate (source-grammar-keyword-predicate grammar)))
     (and (plusp (length token))
          (char= (char token 0) #\:)
-         (or (null keywords)
+         (or (and (null keywords) (null predicate))
              (not (null
                    (some (lambda (keyword)
                            (string-equal token
                                          (format nil ":~A" (symbol-name keyword))))
-                         keywords)))))))
+                         keywords)))
+             (and predicate
+                  (not (null (funcall predicate (subseq token 1)))))))))
 
 (defun scan--validate-keyword-token (source start grammar)
   "Validate the keyword token beginning at START in SOURCE."

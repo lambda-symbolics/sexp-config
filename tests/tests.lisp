@@ -46,6 +46,18 @@
                                    (make-source-grammar :label "ANY.sexp"))
                       '(:anything 1))
                "a grammar without a keyword whitelist accepts any keyword")
+  (let ((grammar (make-source-grammar
+                  :label "PREDICATE.sexp"
+                  :keywords '(:config)
+                  :keyword-predicate (lambda (name)
+                                       (string-equal name "computed")))))
+    (test-assert (equal (read-source "(:config :computed 1)" grammar)
+                        '(:config :computed 1))
+                 "a keyword predicate accepts a computed vocabulary")
+    (test-assert (eq (rejection-kind
+                      (lambda () (read-source "(:config :other 1)" grammar)))
+                     :unknown-field)
+                 "a keyword predicate still refuses what it does not accept"))
   (test-assert (eq (rejection-kind
                     (lambda () (scan-source "((((:config))))"
                                             (tests--grammar :maximum-depth 3))))

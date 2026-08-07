@@ -13,6 +13,11 @@
     :reader source-grammar-keywords
     :type list
     :documentation "The accepted keyword designators, or NIL to accept any keyword.")
+   (keyword-predicate
+    :initarg :keyword-predicate
+    :reader source-grammar-keyword-predicate
+    :type (or null function)
+    :documentation "A predicate accepting a keyword name, or NIL to use KEYWORDS alone.")
    (maximum-depth
     :initarg :maximum-depth
     :reader source-grammar-maximum-depth
@@ -64,6 +69,7 @@
     (&key
        (label "the configuration source")
        keywords
+       keyword-predicate
        (maximum-depth 32)
        (maximum-nodes 4096)
        maximum-string-characters
@@ -76,11 +82,15 @@
   "Create one validated source grammar.
 
 LABEL opens every diagnostic, so give it a noun phrase such as \"SKILL.sexp\".
-KEYWORDS whitelists the keyword tokens the source may name; NIL accepts any
-keyword. MAXIMUM-DEPTH and MAXIMUM-NODES bound the structure, and either may be
-zero to refuse every nested or non-empty source. MAXIMUM-STRING-CHARACTERS
-bounds one string, which MAXIMUM-NODES cannot do because a string counts as one
-node however long it is.
+KEYWORDS whitelists the keyword tokens the source may name. KEYWORD-PREDICATE
+accepts a keyword by name, without its leading colon, which suits a vocabulary
+that is computed rather than listed; a token is accepted when it appears in
+KEYWORDS or satisfies KEYWORD-PREDICATE. Leaving both unset accepts any keyword.
+
+MAXIMUM-DEPTH and MAXIMUM-NODES bound the structure, and either may be zero to
+refuse every nested or non-empty source. MAXIMUM-STRING-CHARACTERS bounds one
+string, which MAXIMUM-NODES cannot do because a string counts as one node
+however long it is.
 
 ALLOWED-ATOM-PREDICATE restricts which atoms may appear, which is how a caller
 excludes symbols it never wants to interpret. IMPROPER-LISTS-PERMITTED-P accepts
@@ -124,6 +134,7 @@ rather than as the standard objects they name."
   (make-instance 'source-grammar
                  :label label
                  :keywords (copy-list keywords)
+                 :keyword-predicate keyword-predicate
                  :maximum-depth maximum-depth
                  :maximum-nodes maximum-nodes
                  :maximum-string-characters maximum-string-characters
