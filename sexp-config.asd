@@ -9,4 +9,5 @@
                 :serial t
                 :components ((:file "package")
                              (:file "conditions")
-                             (:file "grammar")))))
+                             (:file "grammar")
+                             (:file "scan")))))
