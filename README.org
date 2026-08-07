@@ -1,0 +1,103 @@
+#+TITLE: sexp-config
+#+STARTUP: content
+
+=sexp-config= reads configuration written as Common Lisp data without letting
+that data reach the evaluator. A grammar declares the vocabulary and the bounds
+a source may use; anything outside them is refused with a machine-readable
+diagnostic.
+
+#+BEGIN_SRC lisp
+(defparameter *grammar*
+  (sexp-config:make-source-grammar
+   :label "SERVERS.sexp"
+   :keywords '(:servers :version :name :command)
+   :maximum-depth 16
+   :maximum-nodes 512))
+
+(sexp-config:read-source
+ "(:servers :version 1 (:name \"local\" :command \"run\"))"
+ *grammar*)
+;; => (:SERVERS :VERSION 1 (:NAME "local" :COMMAND "run"))
+#+END_SRC
+
+* What it refuses
+
+Reading untrusted Lisp data is only safe if the reader cannot be talked into
+doing anything else. =read-source= scans the text before the reader sees it,
+rather than trusting reader variables alone:
+
+- dispatch, quote, backquote, comma, escape, and multiple-escape characters, so
+  =#.=, =#+=, and read-time evaluation never reach the reader;
+- package-qualified and escaped symbols, so no source can name a symbol in
+  another package;
+- keyword tokens outside the grammar's vocabulary;
+- unbalanced parentheses, nesting past the depth bound, and unterminated
+  strings.
+
+The text is then read with =*read-eval*= bound to =nil=, inside a throwaway
+package that is deleted afterward, and the result is structurally validated.
+Comments and string contents are skipped by the scan, so a quoted string may
+still contain any character.
+
+Circular and shared list structure is always refused, because a caller walking
+the result has to terminate.
+
+* Bounds and dialect
+
+| Option | Meaning |
+|--------+---------|
+| =:label= | Noun phrase opening every diagnostic, such as ="SKILL.sexp"= |
+| =:keywords= | Accepted keyword vocabulary; =nil= accepts any keyword |
+| =:maximum-depth= | Maximum structural nesting |
+| =:maximum-nodes= | Maximum count of conses and atoms |
+| =:allowed-atom-predicate= | Predicate every atom must satisfy; =nil= accepts any |
+| =:improper-lists-permitted-p= | Accept dotted lists rather than refuse them |
+| =:list-tails-increase-depth-p= | Charge list length to the depth budget too |
+| =:common-lisp-symbols-permitted-p= | Reader package inherits =COMMON-LISP= |
+
+Set =:list-tails-increase-depth-p= when one bound should limit both nesting and
+list length. Set =:common-lisp-symbols-permitted-p= to =nil= only when the
+grammar has no place for a bare symbol: with it false, the tokens =nil= and =t=
+read as fresh uninterned symbols rather than the standard objects they name, so
+a grammar that expects a real =nil= must leave it true.
+
+* Diagnostics
+
+Every rejection signals =sexp-config-error=, carrying a stable =kind= for
+translation, the grammar =label=, a human-readable =message=, and the offending
+=token= when one identifies the problem. The kinds are =:invalid-syntax=,
+=:unknown-field=, =:data-too-deep=, =:data-too-large=, =:invalid-structure=,
+=:invalid-value=, =:no-form=, =:multiple-forms=, =:read-error=, and
+=:invalid-grammar=.
+
+A host that keeps its own diagnostic conditions translates at the boundary
+instead of exposing this one:
+
+#+BEGIN_SRC lisp
+(handler-case
+    (sexp-config:read-source source *grammar*)
+  (sexp-config:sexp-config-error (condition)
+    (error 'my-configuration-error
+           :kind (sexp-config:sexp-config-error-kind condition)
+           :message (sexp-config:sexp-config-error-message condition))))
+#+END_SRC
+
+* What it does not do
+
+=read-source= takes a string. Bounding how much text is read from a file, and
+confining which files may be read at all, stay with the caller: those decisions
+depend on the caller's directory layout, symlink policy, and identity checks,
+and putting them here would make the bounds harder to audit rather than easier.
+
+* Tests
+
+#+BEGIN_SRC lisp
+(asdf:test-system :sexp-config)
+#+END_SRC
+
+* License
+
+Licensed under =COLL-Attribution=. See =LICENSE.lisp= for the authoritative
+terms.
+
+Part of the [[https://www.lambda-symbolics.com/libraries][Lambda Symbolics library shelf]].
