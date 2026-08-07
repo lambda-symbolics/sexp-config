@@ -23,7 +23,19 @@
     :initform nil
     :reader sexp-config-error-token
     :type (or null string)
-    :documentation "The offending token, when one identifies the rejection."))
+    :documentation "The offending token, when one identifies the rejection.")
+   (offset
+    :initarg :offset
+    :initform nil
+    :reader sexp-config-error-offset
+    :type (or null (integer 0))
+    :documentation "The zero-based character offset of the rejection, when known.")
+   (line
+    :initarg :line
+    :initform nil
+    :reader sexp-config-error-line
+    :type (or null (integer 1))
+    :documentation "The one-based source line of the rejection, when known."))
   (:report
    (lambda (condition stream)
      (write-string (sexp-config-error-message condition) stream)))

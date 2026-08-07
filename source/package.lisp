@@ -6,10 +6,13 @@
            #:sexp-config-error
            #:sexp-config-error-kind
            #:sexp-config-error-label
+           #:sexp-config-error-line
            #:sexp-config-error-message
+           #:sexp-config-error-offset
            #:sexp-config-error-token
            #:source-grammar
            #:source-grammar-allowed-atom-predicate
+           #:source-grammar-block-comments-permitted-p
            #:source-grammar-common-lisp-symbols-permitted-p
            #:source-grammar-improper-lists-permitted-p
            #:source-grammar-keywords
@@ -17,6 +20,8 @@
            #:source-grammar-list-tails-increase-depth-p
            #:source-grammar-maximum-depth
            #:source-grammar-maximum-nodes
+           #:source-grammar-maximum-string-characters
+           #:source-grammar-shared-strings-permitted-p
            #:validate-tree))
 
 (defpackage #:sexp-config/tests
@@ -27,6 +32,8 @@
                 #:scan-source
                 #:sexp-config-error
                 #:sexp-config-error-kind
+                #:sexp-config-error-line
+                #:sexp-config-error-offset
                 #:sexp-config-error-token
                 #:validate-tree)
   (:export #:run-tests))

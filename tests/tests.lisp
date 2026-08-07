@@ -131,6 +131,96 @@
                    "a grammar without COMMON-LISP reads NIL as a fresh symbol")))
   nil)
 
+(defun tests--block-comments ()
+  "Exercise nested block comments and their absence."
+  (let ((grammar (tests--grammar :block-comments-permitted-p t)))
+    (test-assert (equal (read-source "#| skipped |# (:config :version 1)" grammar)
+                        '(:config :version 1))
+                 "a block comment is skipped when the grammar permits it")
+    (test-assert (equal (read-source "(:config #| a #| nested |# b |# :version 1)"
+                                     grammar)
+                        '(:config :version 1))
+                 "nested block comments are skipped to the matching close")
+    (test-assert (equal (read-source "(:config :name #|c|#\"x\")" grammar)
+                        '(:config :name "x"))
+                 "a keyword may follow a closed block comment")
+    (test-assert (eq (rejection-kind
+                      (lambda () (read-source "(:config #| unterminated" grammar)))
+                     :invalid-syntax)
+                 "an unterminated block comment is refused")
+    (test-assert (equal (read-source "(:config :name \"#| not a comment |#\")"
+                                     grammar)
+                        '(:config :name "#| not a comment |#"))
+                 "a block comment inside a string is text")
+    (test-assert (equal (read-source "(:config :name \"a\") ; #| unclosed"
+                                     grammar)
+                        '(:config :name "a"))
+                 "a block comment opened inside a line comment is text"))
+  (test-assert (eq (rejection-kind
+                    (lambda () (read-source "#| skipped |# (:config)"
+                                            (tests--grammar))))
+                   :invalid-syntax)
+               "a block comment is refused by default")
+  nil)
+
+(defun tests--positions ()
+  "Exercise the offset and line a rejection reports."
+  (let ((grammar (tests--grammar)))
+    (flet ((line-of (source)
+             (handler-case
+                 (progn (read-source source grammar) nil)
+               (sexp-config-error (condition)
+                 (sexp-config-error-line condition)))))
+      (test-assert (= (line-of "(:config
+                                :version 1
+                                :unexpected 2)")
+                      3)
+                   "an unknown keyword reports the line it appears on")
+      (test-assert (= (line-of "(:config
+                                :version '1)")
+                      2)
+                   "unsupported syntax reports the line it appears on")
+      (test-assert (= (line-of "(:config)
+(:config)")
+                      2)
+                   "a second top-level form reports its own line")
+      (test-assert (= (line-of "(:config :unexpected 1)") 1)
+                   "a first-line rejection reports line one")))
+  (let ((grammar (tests--grammar)))
+    (test-assert
+     (handler-case
+         (progn (read-source "(:config
+                              :unexpected 1)"
+                             grammar)
+                nil)
+       (sexp-config-error (condition)
+         (and (string= (sexp-config-error-token condition) ":unexpected")
+              (integerp (sexp-config-error-offset condition)))))
+     "a rejected token is reported with its offset"))
+  nil)
+
+(defun tests--string-bounds ()
+  "Exercise the string length bound and shared string refusal."
+  (let ((grammar (tests--grammar :maximum-string-characters 3)))
+    (test-assert (equal (read-source "(:config :name \"abc\")" grammar)
+                        '(:config :name "abc"))
+                 "a string at the bound is accepted")
+    (test-assert (eq (rejection-kind
+                      (lambda () (read-source "(:config :name \"abcd\")" grammar)))
+                     :data-too-large)
+                 "a string past the bound is refused"))
+  (let ((shared (copy-seq "same"))
+        (grammar (tests--grammar :shared-strings-permitted-p nil)))
+    (test-assert (eq (rejection-kind
+                      (lambda () (validate-tree (list shared shared) grammar)))
+                     :invalid-structure)
+                 "a shared string is refused when the grammar forbids it")
+    (test-assert (null (rejection-kind
+                        (lambda () (validate-tree (list shared shared)
+                                                  (tests--grammar)))))
+                 "a shared string is accepted by default"))
+  nil)
+
 (defun tests--grammar-validation ()
   "Exercise rejection of malformed grammars."
   (test-assert (eq (rejection-kind (lambda () (make-source-grammar :label 42)))
@@ -149,6 +239,11 @@
                     (lambda () (make-source-grammar :keywords '("name"))))
                    :invalid-grammar)
                "non-symbol keywords are refused")
+  (test-assert (eq (rejection-kind
+                    (lambda ()
+                      (make-source-grammar :maximum-string-characters -1)))
+                   :invalid-grammar)
+               "a negative string bound is refused")
   nil)
 
 (defun run-tests ()
@@ -157,6 +252,9 @@
   (tests--scanning)
   (tests--structure)
   (tests--reader-isolation)
+  (tests--block-comments)
+  (tests--positions)
+  (tests--string-bounds)
   (tests--grammar-validation)
   (format t "~&~:D sexp-config tests passed.~%" *test-count*)
   nil)
