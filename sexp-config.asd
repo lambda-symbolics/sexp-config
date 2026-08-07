@@ -10,4 +10,5 @@
                 :components ((:file "package")
                              (:file "conditions")
                              (:file "grammar")
-                             (:file "scan")))))
+                             (:file "scan")
+                             (:file "read")))))
