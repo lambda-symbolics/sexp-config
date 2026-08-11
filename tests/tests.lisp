@@ -44,6 +44,16 @@
     (test-assert (equal (read-source "(:config :values (1 2 3))" grammar)
                         '(:config :values (1 2 3)))
                  "nested lists read as data")
+    (test-assert (equal (read-source "(:config :name\"x\")" grammar)
+                        '(:config :name "x"))
+                 "a string may follow a keyword with no space")
+    (test-assert
+     (handler-case
+         (progn (read-source "(:config :name#x)" grammar) nil)
+       (sexp-config-error (condition)
+         (and (eq (sexp-config-error-kind condition) :invalid-syntax)
+              (string= (sexp-config-error-token condition) ":name#x"))))
+     "refused reader syntax remains inside the keyword token")
     (test-assert (equal (read-source "(:config :name \"x\":version 1)" grammar)
                         '(:config :name "x" :version 1))
                  "a keyword may follow a closing quote with no space"))

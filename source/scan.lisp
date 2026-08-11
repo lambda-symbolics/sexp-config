@@ -10,7 +10,7 @@ A refused character stays inside the token it appears in, so the token check can
 report it as escaped or package-qualified syntax rather than as an unknown
 keyword."
   (not (null (find character
-                   '(#\( #\) #\; #\Space #\Tab #\Newline #\Return #\Page)))))
+                   '(#\( #\) #\; #\" #\Space #\Tab #\Newline #\Return #\Page)))))
 
 (defun scan--boundary-p (character)
   "Return true when CHARACTER may precede a keyword token.
