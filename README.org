@@ -24,6 +24,10 @@ them signals a machine-readable diagnostic.
 =read-source= scans the text before the reader sees it, then reads with
 =*read-eval*= bound to =nil= inside a throwaway package that is deleted
 afterward. The result is structurally validated.
+The scan bounds nesting, source nodes and decoded string characters before
+allocation. Structural validation counts conses and atoms with an iterative
+walk, so flat lists do not consume the control stack. Vector elements count
+against the source-node budget.
 
 The scan accepts:
 
@@ -61,10 +65,10 @@ A host that keeps its own diagnostic conditions translates at the boundary:
            :message (sexp-config:sexp-config-error-message condition))))
 #+END_SRC
 
-=read-source= takes a string. =read-source-file= scans and reads one file
-straight from disk, so a large source never becomes one string, and refuses a
-file longer than =:maximum-octets= before reading it. Its rejections carry
-octet offsets into the file. Which files may be read stays with the caller.
+=read-source= takes a string. =read-source-file= captures one file's text with
+an optional =:maximum-octets= bound, including growth during capture, then
+scans and reads that capture. Its rejections carry UTF-8 octet offsets.
+File access policy belongs to the caller.
 
 * Data sources
 
@@ -72,6 +76,9 @@ A grammar can also accept data a Lisp printer writes:
 
 - =:octet-vectors-permitted-p= accepts =#( )= vectors holding only integers
   from 0 to 255, read as octet vectors
+- =:readable-strings-permitted-p= accepts rank-one =#A= strings with
+  =CHARACTER= or =BASE-CHAR= element types and matching dimensions; the
+  result is a plain string. The descriptor is bounded independently.
 - =:qualified-common-lisp-symbols-permitted-p= accepts the =COMMON-LISP:= and
   =CL:= spellings of external standard symbols, such as =COMMON-LISP:NIL=;
   restrict which ones with =:allowed-atom-predicate=

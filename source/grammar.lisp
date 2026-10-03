@@ -73,6 +73,11 @@
     :reader source-grammar-octet-vectors-permitted-p
     :type boolean
     :documentation "Whether #( ) vectors of integers from 0 to 255 are accepted.")
+   (readable-strings-permitted-p
+    :initarg :readable-strings-permitted-p
+    :reader source-grammar-readable-strings-permitted-p
+    :type boolean
+    :documentation "Whether #A rank-one CHARACTER or BASE-CHAR string syntax is accepted.")
    (read-default-float-format
     :initarg :read-default-float-format
     :reader source-grammar-read-default-float-format
@@ -96,6 +101,7 @@
        (common-lisp-symbols-permitted-p t)
        qualified-common-lisp-symbols-permitted-p
        octet-vectors-permitted-p
+       readable-strings-permitted-p
        (read-default-float-format 'double-float))
   "Create one validated source grammar.
 
@@ -186,6 +192,8 @@ printer's setting so floats keep their type."
                  (not (null qualified-common-lisp-symbols-permitted-p))
                  :octet-vectors-permitted-p
                  (not (null octet-vectors-permitted-p))
+                 :readable-strings-permitted-p
+                 (not (null readable-strings-permitted-p))
                  :read-default-float-format read-default-float-format))
 
 (defun grammar--fail (grammar kind control &rest arguments)

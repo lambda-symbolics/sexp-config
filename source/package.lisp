@@ -26,6 +26,7 @@
            #:source-grammar-octet-vectors-permitted-p
            #:source-grammar-qualified-common-lisp-symbols-permitted-p
            #:source-grammar-read-default-float-format
+           #:source-grammar-readable-strings-permitted-p
            #:source-grammar-shared-strings-permitted-p
            #:validate-tree))
 

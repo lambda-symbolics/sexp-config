@@ -3,14 +3,12 @@
 ;;;; -- Structure Validation --
 
 (defun validate-tree (form grammar)
-  "Return FORM after rejecting structure GRAMMAR does not accept.
+  "Return FORM after validating GRAMMAR's structure without recursive list walks.
 
-Circular and shared list structure is always rejected, because a caller that
-walks the result must terminate. Depth, node count, string length, shared
-strings, dotted lists, and permitted atoms follow GRAMMAR.
-
-Structure is validated after reading, so these rejections carry no offset."
+Circular and shared lists are rejected. Depth, nodes, strings, dotted tails and
+atoms follow GRAMMAR. Structural rejections carry no source position."
   (let ((seen (make-hash-table :test #'eq))
+        (pending (list (list form 0 nil)))
         (nodes 0)
         (label (source-grammar-label grammar))
         (predicate (source-grammar-allowed-atom-predicate grammar))
@@ -18,48 +16,42 @@ Structure is validated after reading, so these rejections carry no offset."
         (improper-p (source-grammar-improper-lists-permitted-p grammar))
         (shared-strings-p (source-grammar-shared-strings-permitted-p grammar))
         (string-bound (source-grammar-maximum-string-characters grammar)))
-    (labels
-        ((walk (value depth list-tail-p)
-           (when (> depth (source-grammar-maximum-depth grammar))
-             (grammar--fail grammar :data-too-deep
-                            "~A exceeds the structural depth limit of ~D."
-                            label (source-grammar-maximum-depth grammar)))
-           (incf nodes)
-           (when (> nodes (source-grammar-maximum-nodes grammar))
-             (grammar--fail grammar :data-too-large
-                            "~A exceeds the structural node limit of ~D."
-                            label (source-grammar-maximum-nodes grammar)))
-           (cond
-             ((consp value)
-              (when (gethash value seen)
-                (grammar--fail grammar :invalid-structure
-                               "~A contains circular or shared list structure."
-                               label))
-              (setf (gethash value seen) t)
-              (walk (first value) (1+ depth) nil)
-              (walk (rest value) (if tails-deepen-p (1+ depth) depth) t))
-             (t
-              (when (and list-tail-p value (not improper-p))
-                (grammar--fail grammar :invalid-structure
-                               "~A contains an improper list."
-                               label))
-              (when (stringp value)
-                (unless shared-strings-p
+    (loop while pending
+          do (destructuring-bind (value depth list-tail-p) (pop pending)
+               (when (> depth (source-grammar-maximum-depth grammar))
+                 (grammar--fail grammar :data-too-deep
+                                "~A exceeds the structural depth limit of ~D."
+                                label (source-grammar-maximum-depth grammar)))
+               (when (> (incf nodes) (source-grammar-maximum-nodes grammar))
+                 (grammar--fail grammar :data-too-large
+                                "~A exceeds the structural node limit of ~D."
+                                label (source-grammar-maximum-nodes grammar)))
+               (cond
+                 ((consp value)
                   (when (gethash value seen)
                     (grammar--fail grammar :invalid-structure
-                                   "~A contains a shared string."
-                                   label))
-                  (setf (gethash value seen) t))
-                (when (and string-bound (> (length value) string-bound))
-                  (grammar--fail grammar :data-too-large
-                                 "~A contains a string longer than ~D characters."
-                                 label string-bound)))
-              (when (and predicate (not (funcall predicate value)))
-                (grammar--fail grammar :invalid-value
-                               "~A contains an unsupported value."
-                               label))))))
-      (walk form 0 nil))
-    form))
+                                   "~A contains circular or shared list structure." label))
+                  (setf (gethash value seen) t)
+                  (push (list (rest value) (if tails-deepen-p (1+ depth) depth) t) pending)
+                  (push (list (first value) (1+ depth) nil) pending))
+                 (t
+                  (when (and list-tail-p value (not improper-p))
+                    (grammar--fail grammar :invalid-structure
+                                   "~A contains an improper list." label))
+                  (when (stringp value)
+                    (unless shared-strings-p
+                      (when (gethash value seen)
+                        (grammar--fail grammar :invalid-structure
+                                       "~A contains a shared string." label))
+                      (setf (gethash value seen) t))
+                    (when (and string-bound (> (length value) string-bound))
+                      (grammar--fail grammar :data-too-large
+                                     "~A contains a string longer than ~D characters."
+                                     label string-bound)))
+                  (when (and predicate (not (funcall predicate value)))
+                    (grammar--fail grammar :invalid-value
+                                   "~A contains an unsupported value." label)))))))
+  form)
 
 
 ;;;; -- Restricted Reading --
@@ -110,6 +102,23 @@ reaching one of these means the scan and the readtable disagree."
                            "A #( ) vector may hold only integers from 0 to 255."))
     (coerce elements '(vector (unsigned-byte 8)))))
 
+(defun read--readable-string (stream)
+  "Decode only the rank-one character-string spelling of #A, without array allocation."
+  (let ((body (read stream t nil t)))
+    (unless (and (consp body) (consp (rest body))
+                 (consp (first body)) (null (rest (first body)))
+                 (typep (first (first body)) '(integer 0))
+                 (symbolp (second body))
+                 (or (member (second body) '(base-char character))
+                     (and (eq (symbol-package (second body)) *package*)
+                          (member (symbol-name (second body)) '("BASE-CHAR" "CHARACTER")
+                                  :test #'string=)))
+                 (stringp (cddr body))
+                 (= (first (first body)) (length (cddr body))))
+      (read--reject-syntax :invalid-value
+                           "#A must describe one rank-one character string of matching length."))
+    (cddr body)))
+
 (defun read--dispatch-function (grammar)
   "Return the # reader for GRAMMAR, admitting only the syntax it permits.
 
@@ -123,6 +132,9 @@ standard reader treats it; an octet vector returns its vector."
          (read--skip-block-comment stream))
         ((and (eql next #\() (source-grammar-octet-vectors-permitted-p grammar))
          (read--octet-vector stream))
+        ((and (member next '(#\a #\A))
+              (source-grammar-readable-strings-permitted-p grammar))
+         (read--readable-string stream))
         (t
          (read--reject-syntax
           :invalid-syntax
@@ -139,7 +151,8 @@ of a block comment or an octet vector, and only when GRAMMAR permits one."
     (dolist (character '(#\' #\` #\,))
       (set-macro-character character #'read--unsupported-syntax nil readtable))
     (if (or (source-grammar-block-comments-permitted-p grammar)
-            (source-grammar-octet-vectors-permitted-p grammar))
+            (source-grammar-octet-vectors-permitted-p grammar)
+            (source-grammar-readable-strings-permitted-p grammar))
         (set-macro-character #\# (read--dispatch-function grammar) t readtable)
         (set-macro-character #\# #'read--unsupported-syntax t readtable))
     readtable))
@@ -217,42 +230,54 @@ READ-SOURCE-FILE does both for one file."
     (read--form stream grammar
                 (lambda (offset) (grammar--source-line source offset)))))
 
-(defun read-source-file (pathname grammar &key maximum-octets (external-format :utf-8))
-  "Read and return the one form the file at PATHNAME holds, as bounded by GRAMMAR.
+(defun read--file-source (pathname grammar &key maximum-octets external-format)
+  "Capture one file source, bounding physical stream positions before reading Lisp data."
+  (with-open-file (stream pathname :external-format external-format)
+    (when (and maximum-octets (> (file-length stream) maximum-octets))
+      (grammar--fail grammar :data-too-large
+                     "~A exceeds the size limit of ~:D octets."
+                     (source-grammar-label grammar) maximum-octets))
+    (with-output-to-string (source)
+      (loop for character = (read-char stream nil nil)
+            while character
+            do (when maximum-octets
+                 (let ((position (file-position stream)))
+                   (unless position
+                     (grammar--fail grammar :read-error
+                                    "~A has no physical file position for bounded capture."
+                                    (source-grammar-label grammar)))
+                   (when (> position maximum-octets)
+                     (grammar--fail grammar :data-too-large
+                                    "~A exceeds the size limit of ~:D octets."
+                                    (source-grammar-label grammar) maximum-octets))))
+               (write-char character source)))))
 
-The file is scanned and read straight from disk, so a large source never becomes
-one string. A file longer than MAXIMUM-OCTETS, when given, is refused before
-anything is read. Rejections carry octet offsets into the file."
-  (let ((label (source-grammar-label grammar)))
+(defun read-source-file (pathname grammar &key maximum-octets (external-format :utf-8))
+  "Read exactly one bounded form from an immutable capture of PATHNAME's text.
+
+MAXIMUM-OCTETS, when supplied, bounds capture before any Lisp data is read,
+including file growth during capture. File diagnostics use UTF-8 octet offsets."
+  (let ((source nil))
     (handler-case
         (progn
-          (when maximum-octets
-            (with-open-file (stream pathname :element-type '(unsigned-byte 8))
-              (when (> (file-length stream) maximum-octets)
-                (error 'sexp-config-error
-                       :kind :data-too-large
-                       :label label
-                       :offset 0
-                       :line 1
-                       :message (format nil "~A exceeds the size limit of ~:D octets."
-                                        label maximum-octets)))))
-          (with-open-file (stream pathname :external-format external-format)
-            (scan--stream stream grammar :octet-offsets-p t)
-            (file-position stream 0)
-            (read--form stream grammar
-                        (lambda (offset) (read--file-line pathname offset)))))
+            (setf source (read--file-source pathname grammar
+                                           :maximum-octets maximum-octets
+                                           :external-format external-format))
+          (read-source source grammar))
       (sexp-config-error (condition)
-        (error condition))
-      (file-error (cause)
+        (let ((offset (sexp-config-error-offset condition)))
+          (error 'sexp-config-error
+                 :kind (sexp-config-error-kind condition)
+                 :label (sexp-config-error-label condition)
+                 :message (sexp-config-error-message condition)
+                 :token (sexp-config-error-token condition)
+                 :line (sexp-config-error-line condition)
+                 :offset (and offset source
+                              (loop for index below (min offset (length source))
+                                    sum (scan--utf-8-length (char source index)))))))
+      (error (cause)
         (error 'sexp-config-error
                :kind :read-error
-               :label label
-               :message (format nil "Could not read ~A: ~A" label cause))))))
-
-(defun read--file-line (pathname offset)
-  "Return the one-based line of the file at PATHNAME containing octet OFFSET."
-  (with-open-file (stream pathname :element-type '(unsigned-byte 8))
-    (1+ (loop for index below offset
-              for octet = (read-byte stream nil nil)
-              while octet
-              count (= octet 10)))))
+               :label (source-grammar-label grammar)
+               :message (format nil "Could not read ~A: ~A"
+                                (source-grammar-label grammar) cause))))))

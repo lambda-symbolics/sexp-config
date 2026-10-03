@@ -79,6 +79,12 @@ Offsets count characters, or UTF-8 octets when OCTET-OFFSETS-P."
         (line 1)
         (previous nil)
         (depth 0)
+        (nodes 0)
+        (in-token-p nil)
+        (string-characters 0)
+        (array-depth nil)
+        (array-nodes 0)
+        (string-bound (source-grammar-maximum-string-characters grammar))
         (block-comment-depth 0)
         (in-string-p nil)
         (escaped-p nil)
@@ -86,6 +92,7 @@ Offsets count characters, or UTF-8 octets when OCTET-OFFSETS-P."
         (bare (make-string-output-stream))
         (block-comments-p (source-grammar-block-comments-permitted-p grammar))
         (octet-vectors-p (source-grammar-octet-vectors-permitted-p grammar))
+        (readable-strings-p (source-grammar-readable-strings-permitted-p grammar))
         (qualified-p (source-grammar-qualified-common-lisp-symbols-permitted-p grammar))
         (label (source-grammar-label grammar)))
     (labels ((fail-at (kind at-offset at-line token control &rest arguments)
@@ -119,7 +126,18 @@ Offsets count characters, or UTF-8 octets when OCTET-OFFSETS-P."
                        while (and next (not (scan--delimiter-p next)))
                        do (write-char (consume) token))))
 
+             (count-node (at-offset at-line)
+               (if array-depth
+                   (when (> (incf array-nodes) 16)
+                     (fail-at :invalid-syntax at-offset at-line nil
+                              "~A contains an oversized #A string descriptor." label))
+                   (when (> (incf nodes) (source-grammar-maximum-nodes grammar))
+                     (fail-at :data-too-large at-offset at-line nil
+                              "~A exceeds the source node limit of ~D."
+                              label (source-grammar-maximum-nodes grammar)))))
+
              (open-list (at-offset at-line)
+               (count-node at-offset at-line)
                (incf depth)
                (when (> depth (source-grammar-maximum-depth grammar))
                  (fail-at :data-too-deep at-offset at-line nil
@@ -157,6 +175,11 @@ Offsets count characters, or UTF-8 octets when OCTET-OFFSETS-P."
                     (when (find character '(#\Newline #\Return))
                       (setf in-line-comment-p nil)))
                    (in-string-p
+                    (when (or escaped-p (not (find character '(#\" #\\))))
+                      (when (and string-bound (> (incf string-characters) string-bound))
+                        (fail-at :data-too-large token-offset token-line nil
+                                 "~A contains a string longer than ~D characters."
+                                 label string-bound)))
                     (cond
                       (escaped-p
                        (setf escaped-p nil))
@@ -175,27 +198,47 @@ Offsets count characters, or UTF-8 octets when OCTET-OFFSETS-P."
                    ((char= character #\;)
                     (setf in-line-comment-p t))
                    ((char= character #\")
-                    (setf in-string-p t))
+                    (count-node token-offset token-line)
+                    (setf in-string-p t string-characters 0))
                    ((and block-comments-p (char= character #\#) (eql (peek) #\|))
                     (consume)
                     (setf block-comment-depth 1))
                    ((and octet-vectors-p (char= character #\#) (eql (peek) #\())
                     (open-list token-offset token-line)
                     (consume))
+                   ((and readable-strings-p (char= character #\#)
+                         (member (peek) '(#\a #\A)))
+                    (when array-depth
+                      (fail-at :invalid-syntax token-offset token-line nil
+                               "~A contains a nested #A descriptor." label))
+                    (count-node token-offset token-line)
+                    (setf array-depth (1+ depth) array-nodes 0)
+                    (consume))
                    ((find character '(#\# #\' #\` #\, #\\ #\|))
                     (fail-at :invalid-syntax token-offset token-line nil
                              "~A uses unsupported reader syntax ~S."
                              label character))
                    ((char= character #\:)
+                    (unless (and before (not (scan--boundary-p before)))
+                      (count-node token-offset token-line))
                     (colon token-offset token-line before))
                    ((char= character #\()
                     (open-list token-offset token-line))
                    ((char= character #\))
+                    (when (eql depth array-depth)
+                      (setf array-depth nil))
                     (decf depth)
                     (when (minusp depth)
                       (fail-at :invalid-syntax token-offset token-line nil
                                "~A contains an unmatched closing parenthesis."
-                               label))))
+                               label)))
+                   ((and (not in-token-p) (not (scan--delimiter-p character)))
+                    (unless (char= character #\.)
+                      (count-node token-offset token-line))))
+                 (setf in-token-p
+                       (and (not in-string-p) (not in-line-comment-p)
+                            (zerop block-comment-depth)
+                            (not (scan--delimiter-p character))))
                  (if (or in-string-p in-line-comment-p (plusp block-comment-depth)
                          (scan--boundary-p character))
                      (get-output-stream-string bare)

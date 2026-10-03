@@ -273,6 +273,63 @@
                "a negative string bound is refused")
   nil)
 
+(defun tests--preflight-bounds ()
+  "Exercise pre-reader allocation bounds and iterative flat-list validation."
+  (test-assert
+   (eq (rejection-kind
+        (lambda () (scan-source "(nil nil nil nil nil)"
+                                (make-source-grammar :maximum-nodes 4))))
+       :data-too-large)
+   "the scan bounds list allocation before invoking the Lisp reader")
+  (test-assert
+   (eq (rejection-kind
+        (lambda () (scan-source "\"a\\\"bc\""
+                                (make-source-grammar :maximum-string-characters 3))))
+       :data-too-large)
+   "the scan bounds decoded string characters, including escapes")
+  (let ((form (make-list 100000 :initial-element 1)))
+    (test-assert (eq (validate-tree form (make-source-grammar :maximum-depth 1
+                                                            :maximum-nodes 200001))
+                     form)
+                 "flat lists do not consume the control stack")
+    (test-assert
+     (eq (rejection-kind
+          (lambda () (validate-tree form (make-source-grammar :maximum-nodes 200000))))
+         :data-too-large)
+     "iterative validation retains exact cons and atom accounting"))
+  nil)
+
+(defun tests--readable-strings ()
+  "Exercise restricted compatibility with character strings printed readably."
+  (let ((grammar (make-source-grammar
+                  :readable-strings-permitted-p t
+                  :qualified-common-lisp-symbols-permitted-p t
+                  :maximum-string-characters 3
+                  :allowed-atom-predicate #'stringp)))
+    (dolist (source '("#A((3) BASE-CHAR . \"abc\")"
+                      "#a((3) COMMON-LISP:CHARACTER . \"abc\")"))
+      (test-assert (string= (read-source source grammar) "abc")
+                   "a readable character array returns a plain string"))
+    (dolist (source '("#A((999999999) BASE-CHAR . \"abc\")"
+                      "#A((1 3) CHARACTER . \"abc\")"
+                      "#A((3) INTEGER . \"abc\")"
+                      "#A((3) :BASE-CHAR . \"abc\")"
+                      "#A((3) :CHARACTER . \"abc\")"
+                      "#A((3) CHARACTER abc)"))
+      (test-assert (eq (rejection-kind (lambda () (read-source source grammar)))
+                       :invalid-value)
+                   "array syntax cannot allocate arbitrary arrays"))
+    (test-assert
+     (eq (rejection-kind (lambda () (read-source "#A((4) CHARACTER . \"abcd\")" grammar)))
+         :data-too-large)
+     "readable array strings obey the same pre-reader string bound"))
+  (test-assert
+   (eq (rejection-kind (lambda () (read-source "#A((1) BASE-CHAR . \"x\")"
+                                             (make-source-grammar))))
+       :invalid-syntax)
+   "readable array strings require explicit permission")
+  nil)
+
 (defun run-tests ()
   "Run every sexp-config regression test."
   (setf *test-count* 0)
@@ -282,6 +339,8 @@
   (tests--block-comments)
   (tests--positions)
   (tests--string-bounds)
+  (tests--preflight-bounds)
+  (tests--readable-strings)
   (tests--grammar-validation)
   (tests--archive-syntax)
   (tests--source-files)
@@ -378,6 +437,32 @@
                 (sexp-config-error (condition)
                   (and (eq (sexp-config-error-kind condition) :multiple-forms)
                        (= (sexp-config-error-line condition) 2))))
-              "a second form in a file reports its own line"))
+              "a second form in a file reports its own line")
+             (write-source "(:archive 1)")
+             (let ((grammar
+                     (make-source-grammar
+                      :keyword-predicate
+                      (lambda (name)
+                        (declare (ignore name))
+                        (write-source "#.(error \"changed after scan\")")
+                        t))))
+               (test-assert (equal (read-source-file pathname grammar :maximum-octets 1024)
+                                   '(:archive 1))
+                            "scan and read use one captured file source"))
+             (with-open-file (stream pathname :direction :output :if-exists :supersede
+                                              :external-format :latin-1)
+               (write-string "\"é\"" stream))
+             (test-assert (string= (read-source-file pathname (make-source-grammar)
+                                                    :external-format :latin-1
+                                                    :maximum-octets 3)
+                                   "é")
+                          "the octet bound counts physical bytes in the selected encoding")
+             (with-open-file (stream pathname :direction :output :if-exists :supersede
+                                              :element-type '(unsigned-byte 8))
+               (write-byte 255 stream))
+             (test-assert
+              (eq (rejection-kind (lambda () (read-source-file pathname (tests--grammar))))
+                  :read-error)
+              "file decoding failures use the reader diagnostic condition"))
         (ignore-errors (delete-file pathname)))))
   nil)
