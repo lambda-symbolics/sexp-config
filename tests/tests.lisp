@@ -283,5 +283,101 @@
   (tests--positions)
   (tests--string-bounds)
   (tests--grammar-validation)
+  (tests--archive-syntax)
+  (tests--source-files)
   (format t "~&~:D sexp-config tests passed.~%" *test-count*)
+  nil)
+
+(defun tests--archive-grammar (&rest arguments)
+  "Return a grammar accepting the data a portable archive printer writes."
+  (apply #'make-source-grammar
+         :label "ARCHIVE.sexp"
+         :octet-vectors-permitted-p t
+         :qualified-common-lisp-symbols-permitted-p t
+         :read-default-float-format 'single-float
+         :allowed-atom-predicate
+         (lambda (atom)
+           (or (null atom) (eq atom t) (keywordp atom) (stringp atom) (numberp atom)
+               (typep atom '(vector (unsigned-byte 8)))))
+         arguments))
+
+(defun tests--archive-syntax ()
+  "Exercise octet vectors, qualified standard symbols, and the float format."
+  (let ((form (read-source
+               "(:archive COMMON-LISP:NIL cl:t #(0 7 255) 2.5 1.5d0 \"x\")"
+               (tests--archive-grammar))))
+    (test-assert (equal (subseq form 0 3) '(:archive nil t))
+                 "qualified standard symbols read as the symbols they name")
+    (test-assert (equalp (fourth form)
+                         (coerce #(0 7 255) '(vector (unsigned-byte 8))))
+                 "an octet vector reads as octets")
+    (test-assert (and (typep (fifth form) 'single-float)
+                      (typep (sixth form) 'double-float))
+                 "unmarked floats follow the grammar's float format"))
+  (dolist (case '((:invalid-value "(:archive #(1 256))")
+                  (:invalid-value "(:archive #(1 :x))")
+                  (:invalid-syntax "(:archive #2(1 2))")
+                  (:invalid-syntax "(:archive cl::car)")
+                  (:invalid-syntax "(:archive other:car)")
+                  (:invalid-value "(:archive cl:car)")))
+    (destructuring-bind (kind source) case
+      (test-assert (eq (rejection-kind
+                        (lambda () (read-source source (tests--archive-grammar))))
+                       kind)
+                   (format nil "~A is refused as ~(~A~)" source kind))))
+  (test-assert (eq (rejection-kind
+                    (lambda () (read-source "(:config :values #(1 2))" (tests--grammar))))
+                   :invalid-syntax)
+               "octet vectors are refused by default")
+  (test-assert (eq (rejection-kind
+                    (lambda () (read-source "(:config :name #(1 2 (3)))"
+                                            (tests--grammar :octet-vectors-permitted-p t
+                                                            :maximum-depth 2))))
+                   :data-too-deep)
+               "an octet vector counts toward the depth bound")
+  (test-assert (eq (rejection-kind
+                    (lambda () (make-source-grammar :read-default-float-format 'integer)))
+                   :invalid-grammar)
+               "a float format must name a float type")
+  nil)
+
+(defun tests--source-files ()
+  "Exercise reading a source straight from a file."
+  (let ((pathname (merge-pathnames
+                   (format nil "sexp-config-test-~36R.sexp" (random (expt 36 8)))
+                   (uiop:temporary-directory))))
+    (flet ((write-source (text)
+             (with-open-file (stream pathname :direction :output :if-exists :supersede
+                                              :external-format :utf-8)
+               (write-string text stream))))
+      (unwind-protect
+           (progn
+             (write-source (format nil "(:archive \"héllo\"~% #(1 2))"))
+             (test-assert (equalp (read-source-file pathname (tests--archive-grammar))
+                                  (list :archive "héllo"
+                                        (coerce #(1 2) '(vector (unsigned-byte 8)))))
+                          "a file source reads like a string source")
+             (test-assert (eq (rejection-kind
+                               (lambda () (read-source-file pathname (tests--archive-grammar)
+                                                            :maximum-octets 4)))
+                              :data-too-large)
+                          "a file over its octet bound is refused before reading")
+             (write-source (format nil "(:archive \"é\"~%  'x)"))
+             (test-assert
+              (handler-case
+                  (progn (read-source-file pathname (tests--archive-grammar)) nil)
+                (sexp-config-error (condition)
+                  (and (eq (sexp-config-error-kind condition) :invalid-syntax)
+                       (= (sexp-config-error-line condition) 2)
+                       (= (sexp-config-error-offset condition) 17))))
+              "file rejections report the line and the octet offset")
+             (write-source (format nil "(:archive)~%(:archive)"))
+             (test-assert
+              (handler-case
+                  (progn (read-source-file pathname (tests--archive-grammar)) nil)
+                (sexp-config-error (condition)
+                  (and (eq (sexp-config-error-kind condition) :multiple-forms)
+                       (= (sexp-config-error-line condition) 2))))
+              "a second form in a file reports its own line"))
+        (ignore-errors (delete-file pathname)))))
   nil)

@@ -39,26 +39,21 @@ without it."
              (and predicate
                   (not (null (funcall predicate (subseq token 1)))))))))
 
-(defun scan--validate-keyword-token (source start grammar)
-  "Validate the keyword token beginning at START in SOURCE."
-  (let* ((end (or (position-if #'scan--delimiter-p source :start (1+ start))
-                  (length source)))
-         (token (subseq source start end)))
-    (when (find-if (lambda (character)
-                     (find character '(#\: #\\ #\| #\#)))
-                   token
-                   :start 1)
-      (grammar--fail-token
-       grammar :invalid-syntax source start token
-       "~A does not permit escaped or package-qualified symbols."
-       (source-grammar-label grammar)))
-    (unless (scan--accepted-keyword-p token grammar)
-      (grammar--fail-token
-       grammar :unknown-field source start token
-       "~A contains unknown keyword token ~A."
-       (source-grammar-label grammar)
-       token))
-    nil))
+(defun scan--escaped-token-p (token)
+  "Return true when TOKEN, after its first character, holds escape or qualifier syntax."
+  (not (null (find-if (lambda (character)
+                        (find character '(#\: #\\ #\| #\#)))
+                      token
+                      :start 1))))
+
+(defun scan--utf-8-length (character)
+  "Return how many octets CHARACTER occupies in UTF-8."
+  (let ((code (char-code character)))
+    (cond
+      ((< code #x80) 1)
+      ((< code #x800) 2)
+      ((< code #x10000) 3)
+      (t 4))))
 
 (defun scan-source (source grammar)
   "Reject reader syntax and nesting outside GRAMMAR before SOURCE is read.
@@ -71,88 +66,144 @@ parentheses, an unterminated string, and an unterminated block comment.
 
 Line comments and string contents are skipped, so a quoted body may contain any
 of those characters. When the grammar permits them, nested block comments are
-skipped the same way. Every rejection carries the offset and line where it was
-found."
-  (let ((length (length source))
+skipped the same way, octet vectors open like lists, and COMMON-LISP qualified
+symbols pass. Every rejection carries the offset and line where it was found."
+  (with-input-from-string (stream source)
+    (scan--stream stream grammar)))
+
+(defun scan--stream (stream grammar &key octet-offsets-p)
+  "Scan every character of STREAM as SCAN-SOURCE scans a string.
+
+Offsets count characters, or UTF-8 octets when OCTET-OFFSETS-P."
+  (let ((offset 0)
+        (line 1)
+        (previous nil)
         (depth 0)
         (block-comment-depth 0)
         (in-string-p nil)
         (escaped-p nil)
         (in-line-comment-p nil)
+        (bare (make-string-output-stream))
         (block-comments-p (source-grammar-block-comments-permitted-p grammar))
+        (octet-vectors-p (source-grammar-octet-vectors-permitted-p grammar))
+        (qualified-p (source-grammar-qualified-common-lisp-symbols-permitted-p grammar))
         (label (source-grammar-label grammar)))
-    (loop with index = 0
-          while (< index length)
-          do (let ((character (char source index))
-                   (next (and (< (1+ index) length) (char source (1+ index))))
-                   (step 1))
-               (cond
-                 (in-line-comment-p
-                  (when (find character '(#\Newline #\Return))
-                    (setf in-line-comment-p nil)))
-                 (in-string-p
-                  (cond
-                    (escaped-p
-                     (setf escaped-p nil))
-                    ((char= character #\\)
-                     (setf escaped-p t))
-                    ((char= character #\")
-                     (setf in-string-p nil))))
-                 ((plusp block-comment-depth)
-                  (cond
-                    ((and (char= character #\#) (eql next #\|))
-                     (incf block-comment-depth)
-                     (setf step 2))
-                    ((and (char= character #\|) (eql next #\#))
-                     (decf block-comment-depth)
-                     (setf step 2))))
-                 ((char= character #\;)
-                  (setf in-line-comment-p t))
-                 ((char= character #\")
-                  (setf in-string-p t))
-                 ((and block-comments-p
-                       (char= character #\#)
-                       (eql next #\|))
-                  (setf block-comment-depth 1
-                        step 2))
-                 ((find character '(#\# #\' #\` #\, #\\ #\|))
-                  (grammar--fail-at grammar :invalid-syntax source index
-                                    "~A uses unsupported reader syntax ~S."
-                                    label character))
-                 ((char= character #\:)
-                  (when (and (plusp index)
-                             (not (scan--boundary-p (char source (1- index)))))
-                    (grammar--fail-at
-                     grammar :invalid-syntax source index
-                     "~A does not permit package-qualified symbols."
-                     label))
-                  (scan--validate-keyword-token source index grammar))
-                 ((char= character #\()
-                  (incf depth)
-                  (when (> depth (source-grammar-maximum-depth grammar))
-                    (grammar--fail-at
-                     grammar :data-too-deep source index
-                     "~A exceeds the structural depth limit of ~D."
-                     label
-                     (source-grammar-maximum-depth grammar))))
-                 ((char= character #\))
-                  (decf depth)
-                  (when (minusp depth)
-                    (grammar--fail-at
-                     grammar :invalid-syntax source index
-                     "~A contains an unmatched closing parenthesis."
-                     label))))
-               (incf index step)))
-    (when (plusp block-comment-depth)
-      (grammar--fail-at grammar :invalid-syntax source length
-                        "~A contains an unterminated block comment."
-                        label))
-    (when in-string-p
-      (grammar--fail-at grammar :invalid-syntax source length
-                        "~A contains an unterminated string."
-                        label))
-    (unless (zerop depth)
-      (grammar--fail-at grammar :invalid-syntax source length
-                        "~A contains unbalanced parentheses."
-                        label))
-    nil))
+    (labels ((fail-at (kind at-offset at-line token control &rest arguments)
+               (error 'sexp-config-error
+                      :kind kind :label label :offset at-offset :line at-line
+                      :token token
+                      :message (apply #'format nil control arguments)))
+
+             (fail (kind control &rest arguments)
+               (apply #'fail-at kind offset line nil control arguments))
+
+             (advance (character)
+               (incf offset (if octet-offsets-p (scan--utf-8-length character) 1))
+               (when (char= character #\Newline)
+                 (incf line))
+               (setf previous character))
+
+             (consume ()
+               (let ((character (read-char stream nil nil)))
+                 (when character
+                   (advance character))
+                 character))
+
+             (peek ()
+               (peek-char nil stream nil nil))
+
+             (token-rest (prefix)
+               (with-output-to-string (token)
+                 (write-string prefix token)
+                 (loop for next = (peek)
+                       while (and next (not (scan--delimiter-p next)))
+                       do (write-char (consume) token))))
+
+             (open-list (at-offset at-line)
+               (incf depth)
+               (when (> depth (source-grammar-maximum-depth grammar))
+                 (fail-at :data-too-deep at-offset at-line nil
+                          "~A exceeds the structural depth limit of ~D."
+                          label (source-grammar-maximum-depth grammar))))
+
+             (colon (token-offset token-line before)
+               (if (and before (not (scan--boundary-p before)))
+                   (let ((package-name (get-output-stream-string bare)))
+                     (unless (and qualified-p
+                                  (member package-name '("CL" "COMMON-LISP")
+                                          :test #'string-equal)
+                                  (not (eql (peek) #\:))
+                                  (not (scan--escaped-token-p (token-rest ":"))))
+                       (fail-at :invalid-syntax token-offset token-line nil
+                                "~A does not permit package-qualified symbols."
+                                label)))
+                   (let ((token (token-rest ":")))
+                     (when (scan--escaped-token-p token)
+                       (fail-at :invalid-syntax token-offset token-line token
+                                "~A does not permit escaped or package-qualified symbols."
+                                label))
+                     (unless (scan--accepted-keyword-p token grammar)
+                       (fail-at :unknown-field token-offset token-line token
+                                "~A contains unknown keyword token ~A."
+                                label token))))))
+      (loop for character = (read-char stream nil nil)
+            while character
+            do (let ((token-offset offset)
+                     (token-line line)
+                     (before previous))
+                 (advance character)
+                 (cond
+                   (in-line-comment-p
+                    (when (find character '(#\Newline #\Return))
+                      (setf in-line-comment-p nil)))
+                   (in-string-p
+                    (cond
+                      (escaped-p
+                       (setf escaped-p nil))
+                      ((char= character #\\)
+                       (setf escaped-p t))
+                      ((char= character #\")
+                       (setf in-string-p nil))))
+                   ((plusp block-comment-depth)
+                    (cond
+                      ((and (char= character #\#) (eql (peek) #\|))
+                       (consume)
+                       (incf block-comment-depth))
+                      ((and (char= character #\|) (eql (peek) #\#))
+                       (consume)
+                       (decf block-comment-depth))))
+                   ((char= character #\;)
+                    (setf in-line-comment-p t))
+                   ((char= character #\")
+                    (setf in-string-p t))
+                   ((and block-comments-p (char= character #\#) (eql (peek) #\|))
+                    (consume)
+                    (setf block-comment-depth 1))
+                   ((and octet-vectors-p (char= character #\#) (eql (peek) #\())
+                    (open-list token-offset token-line)
+                    (consume))
+                   ((find character '(#\# #\' #\` #\, #\\ #\|))
+                    (fail-at :invalid-syntax token-offset token-line nil
+                             "~A uses unsupported reader syntax ~S."
+                             label character))
+                   ((char= character #\:)
+                    (colon token-offset token-line before))
+                   ((char= character #\()
+                    (open-list token-offset token-line))
+                   ((char= character #\))
+                    (decf depth)
+                    (when (minusp depth)
+                      (fail-at :invalid-syntax token-offset token-line nil
+                               "~A contains an unmatched closing parenthesis."
+                               label))))
+                 (if (or in-string-p in-line-comment-p (plusp block-comment-depth)
+                         (scan--boundary-p character))
+                     (get-output-stream-string bare)
+                     (write-char character bare))))
+      (when (plusp block-comment-depth)
+        (fail :invalid-syntax "~A contains an unterminated block comment." label))
+      (when in-string-p
+        (fail :invalid-syntax "~A contains an unterminated string." label))
+      (unless (zerop depth)
+        (fail :invalid-syntax "~A contains unbalanced parentheses." label))
+      nil)))

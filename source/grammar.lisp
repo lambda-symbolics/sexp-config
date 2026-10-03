@@ -62,7 +62,22 @@
     :initarg :common-lisp-symbols-permitted-p
     :reader source-grammar-common-lisp-symbols-permitted-p
     :type boolean
-    :documentation "Whether the reader package inherits COMMON-LISP symbols."))
+    :documentation "Whether the reader package inherits COMMON-LISP symbols.")
+   (qualified-common-lisp-symbols-permitted-p
+    :initarg :qualified-common-lisp-symbols-permitted-p
+    :reader source-grammar-qualified-common-lisp-symbols-permitted-p
+    :type boolean
+    :documentation "Whether COMMON-LISP: and CL: qualified external symbols are accepted.")
+   (octet-vectors-permitted-p
+    :initarg :octet-vectors-permitted-p
+    :reader source-grammar-octet-vectors-permitted-p
+    :type boolean
+    :documentation "Whether #( ) vectors of integers from 0 to 255 are accepted.")
+   (read-default-float-format
+    :initarg :read-default-float-format
+    :reader source-grammar-read-default-float-format
+    :type (member short-float single-float double-float long-float)
+    :documentation "The float type an unmarked float reads as."))
   (:documentation "The bounded data dialect one configuration source may use."))
 
 (defun make-source-grammar
@@ -78,7 +93,10 @@
        improper-lists-permitted-p
        list-tails-increase-depth-p
        (shared-strings-permitted-p t)
-       (common-lisp-symbols-permitted-p t))
+       (common-lisp-symbols-permitted-p t)
+       qualified-common-lisp-symbols-permitted-p
+       octet-vectors-permitted-p
+       (read-default-float-format 'double-float))
   "Create one validated source grammar.
 
 LABEL opens every diagnostic, so give it a noun phrase such as \"SKILL.sexp\".
@@ -108,7 +126,16 @@ parsing rule.
 COMMON-LISP-SYMBOLS-PERMITTED-P controls whether the throwaway reader package
 inherits COMMON-LISP. Leave it true unless the grammar has no place for a bare
 symbol: with it false, the tokens NIL and T read as fresh uninterned symbols
-rather than as the standard objects they name."
+rather than as the standard objects they name.
+QUALIFIED-COMMON-LISP-SYMBOLS-PERMITTED-P also accepts the COMMON-LISP: and CL:
+spellings of external standard symbols, as a printer writes them when the
+standard package is not current; restrict which ones with
+ALLOWED-ATOM-PREDICATE.
+
+OCTET-VECTORS-PERMITTED-P accepts #( ) vectors holding only integers from 0 to
+255, read as octet vectors that count as one node and one level of nesting.
+READ-DEFAULT-FLOAT-FORMAT is the type an unmarked float reads as; match the
+printer's setting so floats keep their type."
   (unless (stringp label)
     (error 'sexp-config-error
            :kind :invalid-grammar
@@ -126,6 +153,12 @@ rather than as the standard objects they name."
            :kind :invalid-grammar
            :label label
            :message "A source grammar string bound must be NIL or non-negative."))
+  (unless (member read-default-float-format
+                 '(short-float single-float double-float long-float))
+    (error 'sexp-config-error
+           :kind :invalid-grammar
+           :label label
+           :message "A source grammar float format must name a float type."))
   (unless (every #'symbolp keywords)
     (error 'sexp-config-error
            :kind :invalid-grammar
@@ -148,7 +181,12 @@ rather than as the standard objects they name."
                  :shared-strings-permitted-p
                  (not (null shared-strings-permitted-p))
                  :common-lisp-symbols-permitted-p
-                 (not (null common-lisp-symbols-permitted-p))))
+                 (not (null common-lisp-symbols-permitted-p))
+                 :qualified-common-lisp-symbols-permitted-p
+                 (not (null qualified-common-lisp-symbols-permitted-p))
+                 :octet-vectors-permitted-p
+                 (not (null octet-vectors-permitted-p))
+                 :read-default-float-format read-default-float-format))
 
 (defun grammar--fail (grammar kind control &rest arguments)
   "Signal a SEXP-CONFIG-ERROR of KIND describing GRAMMAR's rejected source."

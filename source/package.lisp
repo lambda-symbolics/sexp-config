@@ -2,6 +2,7 @@
   (:use #:cl)
   (:export #:make-source-grammar
            #:read-source
+           #:read-source-file
            #:scan-source
            #:sexp-config-error
            #:sexp-config-error-kind
@@ -22,6 +23,9 @@
            #:source-grammar-maximum-depth
            #:source-grammar-maximum-nodes
            #:source-grammar-maximum-string-characters
+           #:source-grammar-octet-vectors-permitted-p
+           #:source-grammar-qualified-common-lisp-symbols-permitted-p
+           #:source-grammar-read-default-float-format
            #:source-grammar-shared-strings-permitted-p
            #:validate-tree))
 
@@ -30,6 +34,7 @@
   (:import-from #:sexp-config
                 #:make-source-grammar
                 #:read-source
+                #:read-source-file
                 #:scan-source
                 #:sexp-config-error
                 #:sexp-config-error-kind

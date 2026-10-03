@@ -102,18 +102,31 @@ reaching one of these means the scan and the readtable disagree."
            (decf depth))))))
   (values))
 
-(defun read--dispatch-syntax (stream character)
-  "Read a nested block comment, and reject every other use of CHARACTER.
+(defun read--octet-vector (stream)
+  "Read the rest of one #( ) vector whose opening was already read, as octets."
+  (let ((elements (read-delimited-list #\) stream t)))
+    (unless (every (lambda (element) (typep element '(integer 0 255))) elements)
+      (read--reject-syntax :invalid-value
+                           "A #( ) vector may hold only integers from 0 to 255."))
+    (coerce elements '(vector (unsigned-byte 8)))))
 
-Returning no values makes a block comment behave as whitespace, which is how
-the standard reader treats it."
-  (declare (ignore character))
-  (let ((next (read-char stream nil nil)))
-    (unless (eql next #\|)
-      (read--reject-syntax
-       :invalid-syntax
-       (format nil "Unsupported reader syntax #~@[~C~]." next)))
-    (read--skip-block-comment stream)))
+(defun read--dispatch-function (grammar)
+  "Return the # reader for GRAMMAR, admitting only the syntax it permits.
+
+A nested block comment returns no values, so it reads as whitespace the way the
+standard reader treats it; an octet vector returns its vector."
+  (lambda (stream character)
+    (declare (ignore character))
+    (let ((next (read-char stream nil nil)))
+      (cond
+        ((and (eql next #\|) (source-grammar-block-comments-permitted-p grammar))
+         (read--skip-block-comment stream))
+        ((and (eql next #\() (source-grammar-octet-vectors-permitted-p grammar))
+         (read--octet-vector stream))
+        (t
+         (read--reject-syntax
+          :invalid-syntax
+          (format nil "Unsupported reader syntax #~@[~C~]." next)))))))
 
 (defun read--restricted-readtable (grammar)
   "Return a fresh standard readtable narrowed to what GRAMMAR accepts.
@@ -121,14 +134,72 @@ the standard reader treats it."
 Quoting and dispatch are removed. The scan refuses those characters first;
 narrowing the readtable as well keeps a change on either side from widening the
 accepted grammar on its own. The dispatch character survives only as the opening
-of a block comment, and only when GRAMMAR permits one."
+of a block comment or an octet vector, and only when GRAMMAR permits one."
   (let ((readtable (copy-readtable nil)))
     (dolist (character '(#\' #\` #\,))
       (set-macro-character character #'read--unsupported-syntax nil readtable))
-    (if (source-grammar-block-comments-permitted-p grammar)
-        (set-macro-character #\# #'read--dispatch-syntax t readtable)
+    (if (or (source-grammar-block-comments-permitted-p grammar)
+            (source-grammar-octet-vectors-permitted-p grammar))
+        (set-macro-character #\# (read--dispatch-function grammar) t readtable)
         (set-macro-character #\# #'read--unsupported-syntax t readtable))
     readtable))
+
+(defun read--form (stream grammar locate)
+  "Read and validate the one form STREAM holds, after its scan succeeded.
+
+LOCATE maps a stream position to its one-based line for diagnostics. The form is
+read with evaluation disabled inside a throwaway package that is deleted
+afterward."
+  (let ((position 0)
+        (start (or (file-position stream) 0))
+        (reader-package
+          (make-package (symbol-name (gensym "SEXP-CONFIG-READER-"))
+                        :use (when (source-grammar-common-lisp-symbols-permitted-p
+                                    grammar)
+                               '(#:cl)))))
+    (flet ((fail-at (kind offset control &rest arguments)
+             (error 'sexp-config-error
+                    :kind kind
+                    :label (source-grammar-label grammar)
+                    :offset offset
+                    :line (funcall locate offset)
+                    :message (apply #'format nil control arguments))))
+      (unwind-protect
+           (handler-case
+               (let ((*package* reader-package)
+                     (*read-eval* nil)
+                     (*read-suppress* nil)
+                     (*read-base* 10)
+                     (*read-default-float-format*
+                       (source-grammar-read-default-float-format grammar))
+                     (*readtable* (read--restricted-readtable grammar))
+                     (end (list :end)))
+                 ;; This handler declines, so the enclosing HANDLER-CASE still
+                 ;; runs. It exists only to record how far the reader had got
+                 ;; while the stream is still open.
+                 (handler-bind
+                     ((serious-condition
+                        (lambda (condition)
+                          (declare (ignore condition))
+                          (setf position
+                                (- (or (ignore-errors (file-position stream)) start)
+                                   start)))))
+                   (let ((form (read stream nil end)))
+                     (when (eq form end)
+                       (fail-at :no-form 0 "~A contains no form."
+                                (source-grammar-label grammar)))
+                     (unless (eq (read stream nil end) end)
+                       (fail-at :multiple-forms
+                                (- (or (file-position stream) start) start)
+                                "~A must contain exactly one top-level form."
+                                (source-grammar-label grammar)))
+                     (validate-tree form grammar))))
+             (sexp-config-error (condition)
+               (error condition))
+             (serious-condition (cause)
+               (fail-at :read-error position "Could not read ~A: ~A"
+                        (source-grammar-label grammar) cause)))
+        (delete-package reader-package)))))
 
 (defun read-source (source grammar)
   "Read and return the one form SOURCE holds, as bounded by GRAMMAR.
@@ -139,49 +210,49 @@ validated. Every rejection signals SEXP-CONFIG-ERROR, so a host with its own
 diagnostics translates that condition at this boundary.
 
 The caller supplies SOURCE, so bounding how much text is read from a file, and
-confining which files may be read at all, remain the caller's responsibility."
+confining which files may be read at all, remain the caller's responsibility;
+READ-SOURCE-FILE does both for one file."
   (scan-source source grammar)
-  (let ((position 0)
-        (reader-package
-          (make-package (symbol-name (gensym "SEXP-CONFIG-READER-"))
-                        :use (when (source-grammar-common-lisp-symbols-permitted-p
-                                    grammar)
-                               '(#:cl)))))
-    (unwind-protect
-         (handler-case
-             (let ((*package* reader-package)
-                   (*read-eval* nil)
-                   (*read-suppress* nil)
-                   (*read-base* 10)
-                   (*read-default-float-format* 'double-float)
-                   (*readtable* (read--restricted-readtable grammar))
-                   (end (list :end)))
-               (with-input-from-string (stream source)
-                 ;; This handler declines, so the enclosing HANDLER-CASE still
-                 ;; runs. It exists only to record how far the reader had got
-                 ;; while the stream is still open.
-                 (handler-bind
-                     ((serious-condition
-                        (lambda (condition)
-                          (declare (ignore condition))
-                          (setf position
-                                (or (ignore-errors (file-position stream)) 0)))))
-                   (let ((form (read stream nil end)))
-                     (when (eq form end)
-                       (grammar--fail-at grammar :no-form source 0
-                                         "~A contains no form."
-                                         (source-grammar-label grammar)))
-                     (unless (eq (read stream nil end) end)
-                       (grammar--fail-at
-                        grammar :multiple-forms source
-                        (or (file-position stream) 0)
-                        "~A must contain exactly one top-level form."
-                        (source-grammar-label grammar)))
-                     (validate-tree form grammar)))))
-           (sexp-config-error (condition)
-             (error condition))
-           (serious-condition (cause)
-             (grammar--fail-at grammar :read-error source position
-                               "Could not read ~A: ~A"
-                               (source-grammar-label grammar) cause)))
-      (delete-package reader-package))))
+  (with-input-from-string (stream source)
+    (read--form stream grammar
+                (lambda (offset) (grammar--source-line source offset)))))
+
+(defun read-source-file (pathname grammar &key maximum-octets (external-format :utf-8))
+  "Read and return the one form the file at PATHNAME holds, as bounded by GRAMMAR.
+
+The file is scanned and read straight from disk, so a large source never becomes
+one string. A file longer than MAXIMUM-OCTETS, when given, is refused before
+anything is read. Rejections carry octet offsets into the file."
+  (let ((label (source-grammar-label grammar)))
+    (handler-case
+        (progn
+          (when maximum-octets
+            (with-open-file (stream pathname :element-type '(unsigned-byte 8))
+              (when (> (file-length stream) maximum-octets)
+                (error 'sexp-config-error
+                       :kind :data-too-large
+                       :label label
+                       :offset 0
+                       :line 1
+                       :message (format nil "~A exceeds the size limit of ~:D octets."
+                                        label maximum-octets)))))
+          (with-open-file (stream pathname :external-format external-format)
+            (scan--stream stream grammar :octet-offsets-p t)
+            (file-position stream 0)
+            (read--form stream grammar
+                        (lambda (offset) (read--file-line pathname offset)))))
+      (sexp-config-error (condition)
+        (error condition))
+      (file-error (cause)
+        (error 'sexp-config-error
+               :kind :read-error
+               :label label
+               :message (format nil "Could not read ~A: ~A" label cause))))))
+
+(defun read--file-line (pathname offset)
+  "Return the one-based line of the file at PATHNAME containing octet OFFSET."
+  (with-open-file (stream pathname :element-type '(unsigned-byte 8))
+    (1+ (loop for index below offset
+              for octet = (read-byte stream nil nil)
+              while octet
+              count (= octet 10)))))

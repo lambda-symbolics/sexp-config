@@ -61,8 +61,23 @@ A host that keeps its own diagnostic conditions translates at the boundary:
            :message (sexp-config:sexp-config-error-message condition))))
 #+END_SRC
 
-=read-source= takes a string. Bounding how much text is read from a file, and
-which files may be read, stay with the caller.
+=read-source= takes a string. =read-source-file= scans and reads one file
+straight from disk, so a large source never becomes one string, and refuses a
+file longer than =:maximum-octets= before reading it. Its rejections carry
+octet offsets into the file. Which files may be read stays with the caller.
+
+* Data sources
+
+A grammar can also accept data a Lisp printer writes:
+
+- =:octet-vectors-permitted-p= accepts =#( )= vectors holding only integers
+  from 0 to 255, read as octet vectors
+- =:qualified-common-lisp-symbols-permitted-p= accepts the =COMMON-LISP:= and
+  =CL:= spellings of external standard symbols, such as =COMMON-LISP:NIL=;
+  restrict which ones with =:allowed-atom-predicate=
+- =:read-default-float-format= sets the type an unmarked float reads as
+  (default =double-float=); match the printer's setting so floats keep their
+  type
 
 * Tests
 
