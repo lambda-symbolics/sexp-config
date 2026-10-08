@@ -157,6 +157,27 @@ of a block comment or an octet vector, and only when GRAMMAR permits one."
         (set-macro-character #\# #'read--unsupported-syntax t readtable))
     readtable))
 
+#+sb-thread
+(defvar *reader-package-lock* (sb-thread:make-mutex :name "sexp-config reader packages")
+  "Serialize private reader-package identity allocation and registration.")
+
+(defvar *reader-package-counter* 0
+  "Private identity counter independent of concurrent callers of GENSYM.")
+
+(defun read--make-reader-package (grammar)
+  "Create a fresh restricted reader package without reusing an existing name."
+  (flet ((create ()
+           (loop for name = (format nil "SEXP-CONFIG-READER-~D"
+                                   (incf *reader-package-counter*))
+                 unless (find-package name)
+                   return (make-package
+                           name :use (when (source-grammar-common-lisp-symbols-permitted-p grammar)
+                                       '(#:cl))))))
+    #+sb-thread
+    (sb-thread:with-mutex (*reader-package-lock*) (create))
+    #-sb-thread
+    (create)))
+
 (defun read--form (stream grammar locate)
   "Read and validate the one form STREAM holds, after its scan succeeded.
 
@@ -165,11 +186,7 @@ read with evaluation disabled inside a throwaway package that is deleted
 afterward."
   (let ((position 0)
         (start (or (file-position stream) 0))
-        (reader-package
-          (make-package (symbol-name (gensym "SEXP-CONFIG-READER-"))
-                        :use (when (source-grammar-common-lisp-symbols-permitted-p
-                                    grammar)
-                               '(#:cl)))))
+        (reader-package (read--make-reader-package grammar)))
     (flet ((fail-at (kind offset control &rest arguments)
              (error 'sexp-config-error
                     :kind kind

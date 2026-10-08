@@ -330,9 +330,50 @@
    "readable array strings require explicit permission")
   nil)
 
+(defun tests--reader-package-collision ()
+  "Read safely when the next private package name already exists."
+  (let* ((sexp-config::*reader-package-counter* 0)
+         (name "SEXP-CONFIG-READER-1")
+         (existing (find-package name))
+         (package (or existing (make-package name :use nil))))
+    (unwind-protect
+         (test-assert (equal (read-source "(:config :version 1)" (tests--grammar))
+                             '(:config :version 1))
+                      "restricted readers skip existing private package names")
+      (unless existing (delete-package package)))))
+
+#+sb-thread
+(defun tests--concurrent-reader-packages ()
+  "Exercise restricted reads whose throwaway packages are created concurrently."
+  (let* ((count 24)
+         (grammar (tests--grammar))
+         (start (sb-thread:make-semaphore :count 0))
+         (results (make-array count :initial-element nil)))
+    (let ((threads
+            (loop for index below count
+                  collect
+                  (sb-thread:make-thread
+                   (lambda (slot)
+                     (sb-thread:wait-on-semaphore start)
+                     (setf (aref results slot)
+                           (handler-case
+                               (equal (read-source "(:config :version 1)" grammar)
+                                      '(:config :version 1))
+                             (error () nil))))
+                   :arguments (list index)))))
+      (sb-thread:signal-semaphore start count)
+      (dolist (thread threads)
+        (sb-thread:join-thread thread)))
+    (test-assert (every #'identity results)
+                 "concurrent restricted reads create independent reader packages")))
+
+
 (defun run-tests ()
   "Run every sexp-config regression test."
   (setf *test-count* 0)
+  (tests--reader-package-collision)
+  #+sb-thread
+  (tests--concurrent-reader-packages)
   (tests--scanning)
   (tests--structure)
   (tests--reader-isolation)
