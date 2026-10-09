@@ -254,9 +254,12 @@ READ-SOURCE-FILE does both for one file."
       (grammar--fail grammar :data-too-large
                      "~A exceeds the size limit of ~:D octets."
                      (source-grammar-label grammar) maximum-octets))
+    ;; Check the physical position once per chunk: a per-character
+    ;; FILE-POSITION makes large captures crawl on buffered character streams.
     (with-output-to-string (source)
-      (loop for character = (read-char stream nil nil)
-            while character
+      (loop with buffer = (make-string 65536)
+            for end = (read-sequence buffer stream)
+            while (plusp end)
             do (when maximum-octets
                  (let ((position (file-position stream)))
                    (unless position
@@ -267,7 +270,7 @@ READ-SOURCE-FILE does both for one file."
                      (grammar--fail grammar :data-too-large
                                     "~A exceeds the size limit of ~:D octets."
                                     (source-grammar-label grammar) maximum-octets))))
-               (write-char character source)))))
+               (write-string buffer source :end end)))))
 
 (defun read-source-file (pathname grammar &key maximum-octets (external-format :utf-8))
   "Read exactly one bounded form from an immutable capture of PATHNAME's text.

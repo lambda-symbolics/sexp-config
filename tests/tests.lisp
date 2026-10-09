@@ -498,6 +498,13 @@
                                                     :maximum-octets 3)
                                    "é")
                           "the octet bound counts physical bytes in the selected encoding")
+             (let ((text (format nil "\"~A\""
+                                 (make-string 100000 :initial-element #\é))))
+               (write-source text)
+               (test-assert (string= (read-source-file pathname (make-source-grammar)
+                                                       :maximum-octets 200002)
+                                     (subseq text 1 (1- (length text))))
+                            "a bounded capture longer than one read chunk keeps every character"))
              (with-open-file (stream pathname :direction :output :if-exists :supersede
                                               :element-type '(unsigned-byte 8))
                (write-byte 255 stream))
