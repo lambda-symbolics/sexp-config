@@ -7,15 +7,15 @@
 
 Circular and shared lists are rejected. Depth, nodes, strings, dotted tails and
 atoms follow GRAMMAR. Structural rejections carry no source position."
-  (let ((seen (make-hash-table :test #'eq))
-        (pending (list (list form 0 nil)))
-        (nodes 0)
-        (label (source-grammar-label grammar))
-        (predicate (source-grammar-allowed-atom-predicate grammar))
-        (tails-deepen-p (source-grammar-list-tails-increase-depth-p grammar))
-        (improper-p (source-grammar-improper-lists-permitted-p grammar))
+  (let ((seen             (make-hash-table :test #'eq))
+        (pending          (list (list form 0 nil)))
+        (nodes            0)
+        (label            (source-grammar-label grammar))
+        (predicate        (source-grammar-allowed-atom-predicate grammar))
+        (tails-deepen-p   (source-grammar-list-tails-increase-depth-p grammar))
+        (improper-p       (source-grammar-improper-lists-permitted-p grammar))
         (shared-strings-p (source-grammar-shared-strings-permitted-p grammar))
-        (string-bound (source-grammar-maximum-string-characters grammar)))
+        (string-bound     (source-grammar-maximum-string-characters grammar)))
     (loop while pending
           do (destructuring-bind (value depth list-tail-p) (pop pending)
                (when (> depth (source-grammar-maximum-depth grammar))
@@ -62,8 +62,8 @@ atoms follow GRAMMAR. Structural rejections carry no source position."
 These carry no label or position: the scan runs first and reports both, so
 reaching one of these means the scan and the readtable disagree."
   (error 'sexp-config-error
-         :kind kind
-         :label "the configuration source"
+         :kind    kind
+         :label   "the configuration source"
          :message message))
 
 (defun read--unsupported-syntax (stream character)
@@ -184,26 +184,26 @@ of a block comment or an octet vector, and only when GRAMMAR permits one."
 LOCATE maps a stream position to its one-based line for diagnostics. The form is
 read with evaluation disabled inside a throwaway package that is deleted
 afterward."
-  (let ((position 0)
-        (start (or (file-position stream) 0))
+  (let ((position       0)
+        (start          (or (file-position stream) 0))
         (reader-package (read--make-reader-package grammar)))
     (flet ((fail-at (kind offset control &rest arguments)
              (error 'sexp-config-error
-                    :kind kind
-                    :label (source-grammar-label grammar)
-                    :offset offset
-                    :line (funcall locate offset)
+                    :kind    kind
+                    :label   (source-grammar-label grammar)
+                    :offset  offset
+                    :line    (funcall locate offset)
                     :message (apply #'format nil control arguments))))
       (unwind-protect
            (handler-case
-               (let ((*package* reader-package)
-                     (*read-eval* nil)
+               (let ((*package*       reader-package)
+                     (*read-eval*     nil)
                      (*read-suppress* nil)
-                     (*read-base* 10)
+                     (*read-base*     10)
                      (*read-default-float-format*
                        (source-grammar-read-default-float-format grammar))
-                     (*readtable* (read--restricted-readtable grammar))
-                     (end (list :end)))
+                     (*readtable*     (read--restricted-readtable grammar))
+                     (end             (list :end)))
                  ;; This handler declines, so the enclosing HANDLER-CASE still
                  ;; runs. It exists only to record how far the reader had got
                  ;; while the stream is still open.
@@ -281,23 +281,23 @@ including file growth during capture. File diagnostics use UTF-8 octet offsets."
     (handler-case
         (progn
             (setf source (read--file-source pathname grammar
-                                           :maximum-octets maximum-octets
+                                           :maximum-octets  maximum-octets
                                            :external-format external-format))
           (read-source source grammar))
       (sexp-config-error (condition)
         (let ((offset (sexp-config-error-offset condition)))
           (error 'sexp-config-error
-                 :kind (sexp-config-error-kind condition)
-                 :label (sexp-config-error-label condition)
+                 :kind    (sexp-config-error-kind condition)
+                 :label   (sexp-config-error-label condition)
                  :message (sexp-config-error-message condition)
-                 :token (sexp-config-error-token condition)
-                 :line (sexp-config-error-line condition)
-                 :offset (and offset source
-                              (loop for index below (min offset (length source))
-                                    sum (scan--utf-8-length (char source index)))))))
+                 :token   (sexp-config-error-token condition)
+                 :line    (sexp-config-error-line condition)
+                 :offset  (and offset source
+                               (loop for index below (min offset (length source))
+                                     sum (scan--utf-8-length (char source index)))))))
       (error (cause)
         (error 'sexp-config-error
-               :kind :read-error
-               :label (source-grammar-label grammar)
+               :kind    :read-error
+               :label   (source-grammar-label grammar)
                :message (format nil "Could not read ~A: ~A"
                                 (source-grammar-label grammar) cause))))))

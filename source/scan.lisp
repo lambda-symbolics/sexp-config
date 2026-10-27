@@ -26,7 +26,7 @@ colon is qualifying a name."
 
 TOKEN still carries its leading colon; a grammar predicate receives the name
 without it."
-  (let ((keywords (source-grammar-keywords grammar))
+  (let ((keywords  (source-grammar-keywords grammar))
         (predicate (source-grammar-keyword-predicate grammar)))
     (and (plusp (length token))
          (char= (char token 0) #\:)
@@ -50,10 +50,14 @@ without it."
   "Return how many octets CHARACTER occupies in UTF-8."
   (let ((code (char-code character)))
     (cond
-      ((< code #x80) 1)
-      ((< code #x800) 2)
-      ((< code #x10000) 3)
-      (t 4))))
+      ((< code #x80)
+       1)
+      ((< code #x800)
+       2)
+      ((< code #x10000)
+       3)
+      (t
+       4))))
 
 (defun scan-source (source grammar)
   "Reject reader syntax and nesting outside GRAMMAR before SOURCE is read.
@@ -75,30 +79,30 @@ symbols pass. Every rejection carries the offset and line where it was found."
   "Scan every character of STREAM as SCAN-SOURCE scans a string.
 
 Offsets count characters, or UTF-8 octets when OCTET-OFFSETS-P."
-  (let ((offset 0)
-        (line 1)
-        (previous nil)
-        (depth 0)
-        (nodes 0)
-        (in-token-p nil)
-        (string-characters 0)
-        (array-depth nil)
-        (array-nodes 0)
-        (string-bound (source-grammar-maximum-string-characters grammar))
+  (let ((offset              0)
+        (line                1)
+        (previous            nil)
+        (depth               0)
+        (nodes               0)
+        (in-token-p          nil)
+        (string-characters   0)
+        (array-depth         nil)
+        (array-nodes         0)
+        (string-bound        (source-grammar-maximum-string-characters grammar))
         (block-comment-depth 0)
-        (in-string-p nil)
-        (escaped-p nil)
-        (in-line-comment-p nil)
-        (bare (make-string-output-stream))
-        (block-comments-p (source-grammar-block-comments-permitted-p grammar))
-        (octet-vectors-p (source-grammar-octet-vectors-permitted-p grammar))
-        (readable-strings-p (source-grammar-readable-strings-permitted-p grammar))
-        (qualified-p (source-grammar-qualified-common-lisp-symbols-permitted-p grammar))
-        (label (source-grammar-label grammar)))
+        (in-string-p         nil)
+        (escaped-p           nil)
+        (in-line-comment-p   nil)
+        (bare                (make-string-output-stream))
+        (block-comments-p    (source-grammar-block-comments-permitted-p grammar))
+        (octet-vectors-p     (source-grammar-octet-vectors-permitted-p grammar))
+        (readable-strings-p  (source-grammar-readable-strings-permitted-p grammar))
+        (qualified-p         (source-grammar-qualified-common-lisp-symbols-permitted-p grammar))
+        (label               (source-grammar-label grammar)))
     (labels ((fail-at (kind at-offset at-line token control &rest arguments)
                (error 'sexp-config-error
                       :kind kind :label label :offset at-offset :line at-line
-                      :token token
+                      :token   token
                       :message (apply #'format nil control arguments)))
 
              (fail (kind control &rest arguments)
@@ -167,8 +171,8 @@ Offsets count characters, or UTF-8 octets when OCTET-OFFSETS-P."
       (loop for character = (read-char stream nil nil)
             while character
             do (let ((token-offset offset)
-                     (token-line line)
-                     (before previous))
+                     (token-line   line)
+                     (before       previous))
                  (advance character)
                  (cond
                    (in-line-comment-p

@@ -4,84 +4,84 @@
 
 (defclass source-grammar ()
   ((label
-    :initarg :label
-    :reader source-grammar-label
-    :type string
+    :initarg       :label
+    :reader        source-grammar-label
+    :type          string
     :documentation "The phrase that opens every diagnostic, naming the source.")
    (keywords
-    :initarg :keywords
-    :reader source-grammar-keywords
-    :type list
+    :initarg       :keywords
+    :reader        source-grammar-keywords
+    :type          list
     :documentation "The accepted keyword designators, or NIL to accept any keyword.")
    (keyword-predicate
-    :initarg :keyword-predicate
-    :reader source-grammar-keyword-predicate
-    :type (or null function)
+    :initarg       :keyword-predicate
+    :reader        source-grammar-keyword-predicate
+    :type          (or null function)
     :documentation "A predicate accepting a keyword name, or NIL to use KEYWORDS alone.")
    (maximum-depth
-    :initarg :maximum-depth
-    :reader source-grammar-maximum-depth
-    :type (integer 0)
+    :initarg       :maximum-depth
+    :reader        source-grammar-maximum-depth
+    :type          (integer 0)
     :documentation "The maximum accepted structural depth; 0 accepts no nesting.")
    (maximum-nodes
-    :initarg :maximum-nodes
-    :reader source-grammar-maximum-nodes
-    :type (integer 0)
+    :initarg       :maximum-nodes
+    :reader        source-grammar-maximum-nodes
+    :type          (integer 0)
     :documentation "The maximum accepted count of conses and atoms.")
    (maximum-string-characters
-    :initarg :maximum-string-characters
-    :reader source-grammar-maximum-string-characters
-    :type (or null (integer 0))
+    :initarg       :maximum-string-characters
+    :reader        source-grammar-maximum-string-characters
+    :type          (or null (integer 0))
     :documentation "The maximum accepted string length, or NIL for unbounded.")
    (allowed-atom-predicate
-    :initarg :allowed-atom-predicate
-    :reader source-grammar-allowed-atom-predicate
-    :type (or null function)
+    :initarg       :allowed-atom-predicate
+    :reader        source-grammar-allowed-atom-predicate
+    :type          (or null function)
     :documentation "A predicate every atom must satisfy, or NIL to accept any atom.")
    (block-comments-permitted-p
-    :initarg :block-comments-permitted-p
-    :reader source-grammar-block-comments-permitted-p
-    :type boolean
+    :initarg       :block-comments-permitted-p
+    :reader        source-grammar-block-comments-permitted-p
+    :type          boolean
     :documentation "Whether nested block comments are accepted rather than rejected.")
    (improper-lists-permitted-p
-    :initarg :improper-lists-permitted-p
-    :reader source-grammar-improper-lists-permitted-p
-    :type boolean
+    :initarg       :improper-lists-permitted-p
+    :reader        source-grammar-improper-lists-permitted-p
+    :type          boolean
     :documentation "Whether a dotted list is accepted rather than rejected.")
    (list-tails-increase-depth-p
-    :initarg :list-tails-increase-depth-p
-    :reader source-grammar-list-tails-increase-depth-p
-    :type boolean
+    :initarg       :list-tails-increase-depth-p
+    :reader        source-grammar-list-tails-increase-depth-p
+    :type          boolean
     :documentation "Whether list length counts toward depth as well as nesting.")
    (shared-strings-permitted-p
-    :initarg :shared-strings-permitted-p
-    :reader source-grammar-shared-strings-permitted-p
-    :type boolean
+    :initarg       :shared-strings-permitted-p
+    :reader        source-grammar-shared-strings-permitted-p
+    :type          boolean
     :documentation "Whether one string object may appear at more than one place.")
    (common-lisp-symbols-permitted-p
-    :initarg :common-lisp-symbols-permitted-p
-    :reader source-grammar-common-lisp-symbols-permitted-p
-    :type boolean
+    :initarg       :common-lisp-symbols-permitted-p
+    :reader        source-grammar-common-lisp-symbols-permitted-p
+    :type          boolean
     :documentation "Whether the reader package inherits COMMON-LISP symbols.")
    (qualified-common-lisp-symbols-permitted-p
-    :initarg :qualified-common-lisp-symbols-permitted-p
-    :reader source-grammar-qualified-common-lisp-symbols-permitted-p
-    :type boolean
+    :initarg       :qualified-common-lisp-symbols-permitted-p
+    :reader        source-grammar-qualified-common-lisp-symbols-permitted-p
+    :type          boolean
     :documentation "Whether COMMON-LISP: and CL: qualified external symbols are accepted.")
    (octet-vectors-permitted-p
-    :initarg :octet-vectors-permitted-p
-    :reader source-grammar-octet-vectors-permitted-p
-    :type boolean
+    :initarg       :octet-vectors-permitted-p
+    :reader        source-grammar-octet-vectors-permitted-p
+    :type          boolean
     :documentation "Whether #( ) vectors of integers from 0 to 255 are accepted.")
    (readable-strings-permitted-p
-    :initarg :readable-strings-permitted-p
-    :reader source-grammar-readable-strings-permitted-p
-    :type boolean
+    :initarg       :readable-strings-permitted-p
+    :reader        source-grammar-readable-strings-permitted-p
+    :type          boolean
     :documentation "Whether #A rank-one CHARACTER or BASE-CHAR string syntax is accepted.")
    (read-default-float-format
-    :initarg :read-default-float-format
-    :reader source-grammar-read-default-float-format
-    :type (member short-float single-float double-float long-float)
+    :initarg       :read-default-float-format
+    :reader        source-grammar-read-default-float-format
+    :type          (member short-float single-float double-float long-float)
     :documentation "The float type an unmarked float reads as."))
   (:documentation "The bounded data dialect one configuration source may use."))
 
@@ -144,40 +144,40 @@ READ-DEFAULT-FLOAT-FORMAT is the type an unmarked float reads as; match the
 printer's setting so floats keep their type."
   (unless (stringp label)
     (error 'sexp-config-error
-           :kind :invalid-grammar
-           :label "the source grammar"
+           :kind    :invalid-grammar
+           :label   "the source grammar"
            :message "A source grammar label must be a string."))
   (unless (and (typep maximum-depth '(integer 0))
                (typep maximum-nodes '(integer 0)))
     (error 'sexp-config-error
-           :kind :invalid-grammar
-           :label label
+           :kind    :invalid-grammar
+           :label   label
            :message "Source grammar bounds must be non-negative integers."))
   (unless (or (null maximum-string-characters)
               (typep maximum-string-characters '(integer 0)))
     (error 'sexp-config-error
-           :kind :invalid-grammar
-           :label label
+           :kind    :invalid-grammar
+           :label   label
            :message "A source grammar string bound must be NIL or non-negative."))
   (unless (member read-default-float-format
                  '(short-float single-float double-float long-float))
     (error 'sexp-config-error
-           :kind :invalid-grammar
-           :label label
+           :kind    :invalid-grammar
+           :label   label
            :message "A source grammar float format must name a float type."))
   (unless (every #'symbolp keywords)
     (error 'sexp-config-error
-           :kind :invalid-grammar
-           :label label
+           :kind    :invalid-grammar
+           :label   label
            :message "Source grammar keywords must be symbols."))
   (make-instance 'source-grammar
-                 :label label
-                 :keywords (copy-list keywords)
-                 :keyword-predicate keyword-predicate
-                 :maximum-depth maximum-depth
-                 :maximum-nodes maximum-nodes
+                 :label                     label
+                 :keywords                  (copy-list keywords)
+                 :keyword-predicate         keyword-predicate
+                 :maximum-depth             maximum-depth
+                 :maximum-nodes             maximum-nodes
                  :maximum-string-characters maximum-string-characters
-                 :allowed-atom-predicate allowed-atom-predicate
+                 :allowed-atom-predicate    allowed-atom-predicate
                  :block-comments-permitted-p
                  (not (null block-comments-permitted-p))
                  :improper-lists-permitted-p
@@ -199,8 +199,8 @@ printer's setting so floats keep their type."
 (defun grammar--fail (grammar kind control &rest arguments)
   "Signal a SEXP-CONFIG-ERROR of KIND describing GRAMMAR's rejected source."
   (error 'sexp-config-error
-         :kind kind
-         :label (source-grammar-label grammar)
+         :kind    kind
+         :label   (source-grammar-label grammar)
          :message (apply #'format nil control arguments)))
 
 (defun grammar--source-line (source offset)

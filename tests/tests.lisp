@@ -3,7 +3,7 @@
 (defun tests--grammar (&rest arguments)
   "Return a test grammar accepting a small keyword vocabulary."
   (apply #'make-source-grammar
-         :label "TEST.sexp"
+         :label    "TEST.sexp"
          :keywords '(:config :version :name :values :enabled)
          arguments))
 
@@ -62,8 +62,8 @@
                       '(:anything 1))
                "a grammar without a keyword whitelist accepts any keyword")
   (let ((grammar (make-source-grammar
-                  :label "PREDICATE.sexp"
-                  :keywords '(:config)
+                  :label             "PREDICATE.sexp"
+                  :keywords          '(:config)
                   :keyword-predicate (lambda (name)
                                        (string-equal name "computed")))))
     (test-assert (equal (read-source "(:config :computed 1)" grammar)
@@ -112,7 +112,7 @@
     (test-assert (null (rejection-kind
                         (lambda () (validate-tree '(1 2 3 4 5 6) grammar))))
                  "list length does not count toward depth by default"))
-  (let ((grammar (tests--grammar :maximum-depth 4
+  (let ((grammar (tests--grammar :maximum-depth               4
                                  :list-tails-increase-depth-p t)))
     (test-assert (eq (rejection-kind
                       (lambda () (validate-tree '(1 2 3 4 5 6) grammar)))
@@ -149,7 +149,7 @@
                                               grammar)))
                      :invalid-structure)
                  "a dotted form read from source is refused structurally"))
-  (let ((strict (tests--grammar :common-lisp-symbols-permitted-p nil))
+  (let ((strict     (tests--grammar :common-lisp-symbols-permitted-p nil))
         (permissive (tests--grammar)))
     (test-assert (null (second (read-source "(:config nil)" permissive)))
                  "an inherited COMMON-LISP package reads NIL as the empty list")
@@ -236,7 +236,7 @@
                       (lambda () (read-source "(:config :name \"abcd\")" grammar)))
                      :data-too-large)
                  "a string past the bound is refused"))
-  (let ((shared (copy-seq "same"))
+  (let ((shared  (copy-seq "same"))
         (grammar (tests--grammar :shared-strings-permitted-p nil)))
     (test-assert (eq (rejection-kind
                       (lambda () (validate-tree (list shared shared) grammar)))
@@ -289,7 +289,7 @@
    "the scan bounds decoded string characters, including escapes")
   (let ((form (make-list 100000 :initial-element 1)))
     (test-assert (eq (validate-tree form (make-source-grammar :maximum-depth 1
-                                                            :maximum-nodes 200001))
+                                                            :maximum-nodes   200001))
                      form)
                  "flat lists do not consume the control stack")
     (test-assert
@@ -302,10 +302,10 @@
 (defun tests--readable-strings ()
   "Exercise restricted compatibility with character strings printed readably."
   (let ((grammar (make-source-grammar
-                  :readable-strings-permitted-p t
+                  :readable-strings-permitted-p              t
                   :qualified-common-lisp-symbols-permitted-p t
-                  :maximum-string-characters 3
-                  :allowed-atom-predicate #'stringp)))
+                  :maximum-string-characters                 3
+                  :allowed-atom-predicate                    #'stringp)))
     (dolist (source '("#A((3) BASE-CHAR . \"abc\")"
                       "#a((3) COMMON-LISP:CHARACTER . \"abc\")"))
       (test-assert (string= (read-source source grammar) "abc")
@@ -333,9 +333,9 @@
 (defun tests--reader-package-collision ()
   "Read safely when the next private package name already exists."
   (let* ((sexp-config::*reader-package-counter* 0)
-         (name "SEXP-CONFIG-READER-1")
-         (existing (find-package name))
-         (package (or existing (make-package name :use nil))))
+         (name                                  "SEXP-CONFIG-READER-1")
+         (existing                              (find-package name))
+         (package                               (or existing (make-package name :use nil))))
     (unwind-protect
          (test-assert (equal (read-source "(:config :version 1)" (tests--grammar))
                              '(:config :version 1))
@@ -345,9 +345,9 @@
 #+sb-thread
 (defun tests--concurrent-reader-packages ()
   "Exercise restricted reads whose throwaway packages are created concurrently."
-  (let* ((count 24)
+  (let* ((count   24)
          (grammar (tests--grammar))
-         (start (sb-thread:make-semaphore :count 0))
+         (start   (sb-thread:make-semaphore :count 0))
          (results (make-array count :initial-element nil)))
     (let ((threads
             (loop for index below count
@@ -366,7 +366,6 @@
         (sb-thread:join-thread thread)))
     (test-assert (every #'identity results)
                  "concurrent restricted reads create independent reader packages")))
-
 
 (defun run-tests ()
   "Run every sexp-config regression test."
@@ -391,10 +390,10 @@
 (defun tests--archive-grammar (&rest arguments)
   "Return a grammar accepting the data a portable archive printer writes."
   (apply #'make-source-grammar
-         :label "ARCHIVE.sexp"
-         :octet-vectors-permitted-p t
+         :label                                     "ARCHIVE.sexp"
+         :octet-vectors-permitted-p                 t
          :qualified-common-lisp-symbols-permitted-p t
-         :read-default-float-format 'single-float
+         :read-default-float-format                 'single-float
          :allowed-atom-predicate
          (lambda (atom)
            (or (null atom) (eq atom t) (keywordp atom) (stringp atom) (numberp atom)
@@ -432,7 +431,7 @@
   (test-assert (eq (rejection-kind
                     (lambda () (read-source "(:config :name #(1 2 (3)))"
                                             (tests--grammar :octet-vectors-permitted-p t
-                                                            :maximum-depth 2))))
+                                                            :maximum-depth             2))))
                    :data-too-deep)
                "an octet vector counts toward the depth bound")
   (test-assert (eq (rejection-kind
@@ -495,7 +494,7 @@
                (write-string "\"é\"" stream))
              (test-assert (string= (read-source-file pathname (make-source-grammar)
                                                     :external-format :latin-1
-                                                    :maximum-octets 3)
+                                                    :maximum-octets  3)
                                    "é")
                           "the octet bound counts physical bytes in the selected encoding")
              (let ((text (format nil "\"~A\""
