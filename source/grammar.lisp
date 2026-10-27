@@ -206,23 +206,3 @@ printer's setting so floats keep their type."
 (defun grammar--source-line (source offset)
   "Return the one-based line of SOURCE containing OFFSET."
   (1+ (count #\Newline source :end (min offset (length source)))))
-
-(defun grammar--fail-at (grammar kind source offset control &rest arguments)
-  "Signal a SEXP-CONFIG-ERROR of KIND located at OFFSET within SOURCE."
-  (error 'sexp-config-error
-         :kind kind
-         :label (source-grammar-label grammar)
-         :offset offset
-         :line (grammar--source-line source offset)
-         :message (apply #'format nil control arguments)))
-
-(defun grammar--fail-token
-    (grammar kind source offset token control &rest arguments)
-  "Signal a SEXP-CONFIG-ERROR of KIND naming TOKEN found at OFFSET in SOURCE."
-  (error 'sexp-config-error
-         :kind kind
-         :label (source-grammar-label grammar)
-         :offset offset
-         :line (grammar--source-line source offset)
-         :token token
-         :message (apply #'format nil control arguments)))
