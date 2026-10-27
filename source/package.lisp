@@ -1,4 +1,5 @@
 (defpackage #:sexp-config
+  (:documentation "Bounded reading of configuration written as Common Lisp data.")
   (:use #:cl)
   (:export #:make-source-grammar
            #:read-source
@@ -31,6 +32,7 @@
            #:validate-tree))
 
 (defpackage #:sexp-config/tests
+  (:documentation "Tests for the sexp-config reader.")
   (:use #:cl)
   (:import-from #:sexp-config
                 #:make-source-grammar
