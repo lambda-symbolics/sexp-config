@@ -179,7 +179,7 @@ of a block comment or an octet vector, and only when GRAMMAR permits one."
     (create)))
 
 (defun read--form (stream grammar locate)
-  "Read and validate the one form STREAM holds, after its scan succeeded.
+  "Read and validate the one form the string STREAM holds, after its scan succeeded.
 
 LOCATE maps a stream position to its one-based line for diagnostics. The form is
 read with evaluation disabled inside a throwaway package that is deleted
@@ -212,7 +212,7 @@ afterward."
                         (lambda (condition)
                           (declare (ignore condition))
                           (setf position
-                                (- (or (ignore-errors (file-position stream)) start)
+                                (- (or (file-position stream) start)
                                    start)))))
                    (let ((form (read stream nil end)))
                      (when (eq form end)
