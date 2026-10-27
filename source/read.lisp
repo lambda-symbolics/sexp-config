@@ -113,11 +113,11 @@ reaching one of these means the scan and the readtable disagree."
                      (and (eq (symbol-package (second body)) *package*)
                           (member (symbol-name (second body)) '("BASE-CHAR" "CHARACTER")
                                   :test #'string=)))
-                 (stringp (cddr body))
-                 (= (first (first body)) (length (cddr body))))
+                 (stringp (rest (rest body)))
+                 (= (first (first body)) (length (rest (rest body)))))
       (read--reject-syntax :invalid-value
                            "#A must describe one rank-one character string of matching length."))
-    (cddr body)))
+    (rest (rest body))))
 
 (defun read--dispatch-function (grammar)
   "Return the # reader for GRAMMAR, admitting only the syntax it permits.
