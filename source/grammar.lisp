@@ -38,6 +38,21 @@
     :reader        source-grammar-allowed-atom-predicate
     :type          (or null function)
     :documentation "A predicate every atom must satisfy, or NIL to accept any atom.")
+   (line-comments-permitted-p
+    :initarg       :line-comments-permitted-p
+    :reader        source-grammar-line-comments-permitted-p
+    :type          boolean
+    :documentation "Whether semicolon comments are accepted outside strings.")
+   (top-level-list-required-p
+    :initarg       :top-level-list-required-p
+    :reader        source-grammar-top-level-list-required-p
+    :type          boolean
+    :documentation "Whether each source form must begin with an opening parenthesis.")
+   (whitespace-characters
+    :initarg       :whitespace-characters
+    :reader        source-grammar-whitespace-characters
+    :type          list
+    :documentation "The characters accepted as whitespace outside strings.")
    (block-comments-permitted-p
     :initarg       :block-comments-permitted-p
     :reader        source-grammar-block-comments-permitted-p
@@ -94,6 +109,9 @@
        (maximum-nodes 4096)
        maximum-string-characters
        allowed-atom-predicate
+       (line-comments-permitted-p t)
+       top-level-list-required-p
+       (whitespace-characters '(#\Space #\Tab #\Newline #\Return #\Page))
        block-comments-permitted-p
        improper-lists-permitted-p
        list-tails-increase-depth-p
@@ -120,6 +138,10 @@ ALLOWED-ATOM-PREDICATE restricts which atoms may appear, which is how a caller
 excludes symbols it never wants to interpret. IMPROPER-LISTS-PERMITTED-P accepts
 dotted lists. LIST-TAILS-INCREASE-DEPTH-P also charges list length to the depth
 budget, which makes MAXIMUM-DEPTH bound list length too.
+
+LINE-COMMENTS-PERMITTED-P controls semicolon comments, enabled by default.
+TOP-LEVEL-LIST-REQUIRED-P restricts each form to parenthesized list syntax.
+WHITESPACE-CHARACTERS selects whitespace outside strings.
 
 BLOCK-COMMENTS-PERMITTED-P accepts nested #| |# comments. It is off by default
 because a grammar that refuses the dispatch character cannot express them.
@@ -178,6 +200,9 @@ printer's setting so floats keep their type."
                  :maximum-nodes             maximum-nodes
                  :maximum-string-characters maximum-string-characters
                  :allowed-atom-predicate    allowed-atom-predicate
+                 :line-comments-permitted-p (not (null line-comments-permitted-p))
+                 :top-level-list-required-p (not (null top-level-list-required-p))
+                 :whitespace-characters     (copy-list whitespace-characters)
                  :block-comments-permitted-p
                  (not (null block-comments-permitted-p))
                  :improper-lists-permitted-p

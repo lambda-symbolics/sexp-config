@@ -3,6 +3,7 @@
   (:use #:cl)
   (:export #:make-source-grammar
            #:read-source
+           #:read-next-source
            #:read-source-file
            #:scan-source
            #:sexp-config-error
@@ -14,6 +15,9 @@
            #:sexp-config-error-token
            #:source-grammar
            #:source-grammar-allowed-atom-predicate
+           #:source-grammar-line-comments-permitted-p
+           #:source-grammar-top-level-list-required-p
+           #:source-grammar-whitespace-characters
            #:source-grammar-block-comments-permitted-p
            #:source-grammar-common-lisp-symbols-permitted-p
            #:source-grammar-improper-lists-permitted-p

@@ -231,7 +231,7 @@ afterward."
                         (source-grammar-label grammar) cause)))
         (delete-package reader-package)))))
 
-(defun read-source (source grammar)
+(defun read-source (source grammar &key maximum-octets)
   "Read and return the one form SOURCE holds, as bounded by GRAMMAR.
 
 SOURCE is scanned before it reaches the reader, read with evaluation disabled
@@ -239,13 +239,34 @@ inside a throwaway package that is deleted afterward, then structurally
 validated. Every rejection signals SEXP-CONFIG-ERROR, so a host with its own
 diagnostics translates that condition at this boundary.
 
-The caller supplies SOURCE, so bounding how much text is read from a file, and
-confining which files may be read at all, remain the caller's responsibility;
-READ-SOURCE-FILE does both for one file."
-  (scan-source source grammar)
+MAXIMUM-OCTETS bounds SOURCE's UTF-8 size during scanning. Diagnostics for this
+captured text use character offsets. Acquisition authority and physical file
+bounds belong to the caller; READ-SOURCE-FILE handles one file's capture."
+  (with-input-from-string (stream source)
+    (scan--stream stream grammar :maximum-octets maximum-octets))
   (with-input-from-string (stream source)
     (read--form stream grammar
                 (lambda (offset) (grammar--source-line source offset)))))
+
+(defun read-next-source (stream grammar &key maximum-octets)
+  "Read the next bounded form from the caller-owned character STREAM.
+
+Return FORM and false, or NIL and true on clean EOF. NIL data is not EOF.
+Capture and scan with GRAMMAR before reading data, counting UTF-8 octets while
+capturing. Consume no character of the following form. Whitespace or comments
+before the form count against MAXIMUM-OCTETS. Incomplete input signals
+SEXP-CONFIG-ERROR. Diagnostics use character offsets relative to this capture.
+Never close or reopen STREAM."
+  (let* ((capture   (make-string-output-stream))
+         (present-p (scan--stream stream grammar :next-form-p t :capture capture
+                                 :maximum-octets maximum-octets))
+         (source    (get-output-stream-string capture)))
+    (if present-p
+        (with-input-from-string (input source)
+          (values (read--form input grammar
+                              (lambda (offset) (grammar--source-line source offset)))
+                  nil))
+        (values nil t))))
 
 (defun read--file-source (pathname grammar &key maximum-octets external-format)
   "Capture one file source, bounding physical stream positions before reading Lisp data."

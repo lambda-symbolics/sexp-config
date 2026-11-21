@@ -75,11 +75,14 @@ symbols pass. Every rejection carries the offset and line where it was found."
   (with-input-from-string (stream source)
     (scan--stream stream grammar)))
 
-(defun scan--stream (stream grammar &key octet-offsets-p)
-  "Scan every character of STREAM as SCAN-SOURCE scans a string.
+(defun scan--stream (stream grammar &key octet-offsets-p next-form-p capture maximum-octets)
+  "Scan STREAM with GRAMMAR, optionally capturing only its next form.
 
-Offsets count characters, or UTF-8 octets when OCTET-OFFSETS-P."
+Offsets count characters, or UTF-8 octets when OCTET-OFFSETS-P. Return whether
+one form began. CAPTURE receives consumed characters, bounded during scanning."
   (let ((offset              0)
+        (octets              0)
+        (started-p           nil)
         (line                1)
         (previous            nil)
         (depth               0)
@@ -109,6 +112,11 @@ Offsets count characters, or UTF-8 octets when OCTET-OFFSETS-P."
                (apply #'fail-at kind offset line nil control arguments))
 
              (advance (character)
+               (incf octets (scan--utf-8-length character))
+               (when (and maximum-octets (> octets maximum-octets))
+                 (fail :data-too-large "~A exceeds the size limit of ~:D octets."
+                       label maximum-octets))
+               (when capture (write-char character capture))
                (incf offset (if octet-offsets-p (scan--utf-8-length character) 1))
                (when (char= character #\Newline)
                  (incf line))
@@ -168,13 +176,35 @@ Offsets count characters, or UTF-8 octets when OCTET-OFFSETS-P."
                        (fail-at :unknown-field token-offset token-line token
                                 "~A contains unknown keyword token ~A."
                                 label token))))))
-      (loop for character = (read-char stream nil nil)
-            while character
+      (loop for next = (peek)
+            while next
+            for character =
+              (progn
+                (when (and next-form-p started-p (zerop depth) (not in-string-p)
+                           (not in-line-comment-p) (zerop block-comment-depth)
+                           in-token-p (scan--delimiter-p next))
+                  (return))
+                (read-char stream))
             do (let ((token-offset offset)
                      (token-line   line)
                      (before       previous))
                  (advance character)
+                 (when (and (not started-p) (not in-line-comment-p)
+                            (zerop block-comment-depth)
+                            (not (find character '(#\Space #\Tab #\Newline #\Return #\Page #\;)))
+                            (not (and block-comments-p (char= character #\#) (eql (peek) #\|))))
+                   (when (and (source-grammar-top-level-list-required-p grammar)
+                              (not (char= character #\()))
+                     (fail-at :invalid-syntax token-offset token-line nil
+                              "~A requires a top-level list." label))
+                   (setf started-p t))
                  (cond
+                   ((and (not in-string-p) (not in-line-comment-p)
+                         (zerop block-comment-depth)
+                         (find character '(#\Space #\Tab #\Newline #\Return #\Page))
+                         (not (find character (source-grammar-whitespace-characters grammar))))
+                    (fail-at :invalid-syntax token-offset token-line nil
+                             "~A contains disallowed whitespace." label))
                    (in-line-comment-p
                     (when (find character '(#\Newline #\Return))
                       (setf in-line-comment-p nil)))
@@ -200,6 +230,9 @@ Offsets count characters, or UTF-8 octets when OCTET-OFFSETS-P."
                        (consume)
                        (decf block-comment-depth))))
                    ((char= character #\;)
+                    (unless (source-grammar-line-comments-permitted-p grammar)
+                      (fail-at :invalid-syntax token-offset token-line nil
+                               "~A does not permit line comments." label))
                     (setf in-line-comment-p t))
                    ((char= character #\")
                     (count-node token-offset token-line)
@@ -246,11 +279,16 @@ Offsets count characters, or UTF-8 octets when OCTET-OFFSETS-P."
                  (if (or in-string-p in-line-comment-p (plusp block-comment-depth)
                          (scan--boundary-p character))
                      (get-output-stream-string bare)
-                     (write-char character bare))))
+                     (write-char character bare))
+                 (when (and next-form-p started-p (zerop depth)
+                            (not in-string-p) (not in-line-comment-p)
+                            (zerop block-comment-depth)
+                            (find character '(#\) #\")))
+                   (return))))
       (when (plusp block-comment-depth)
         (fail :invalid-syntax "~A contains an unterminated block comment." label))
       (when in-string-p
         (fail :invalid-syntax "~A contains an unterminated string." label))
       (unless (zerop depth)
         (fail :invalid-syntax "~A contains unbalanced parentheses." label))
-      nil)))
+      started-p)))
